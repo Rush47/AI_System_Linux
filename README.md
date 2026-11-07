@@ -1,23 +1,79 @@
 # AI_System_Linux — Rush47
 
-Target: **AILinux 26.04 AMD64** with optional **Agent Zero + LibreChat** and the **original** Aria, Alex, Astyria and Aurelius agents from mmitek515-netizen.
+Projekt AILinux 26.04 AMD64 oraz przenośnego zestawu AI opartego na
+LibreChat, Ollama i MCP.
 
-## Current status
-- AILinux ISO is **not** committed to Git (4.89 GiB). Get the current direct ISO URL from https://ailinux.me/ and download with checksum verification:
-  `bash scripts/download-ailinux.sh 'https://DIRECT-OFFICIAL-ISO-URL'`
-- Verified target ISO: `ailinux-26.04-amd64-20261013T144048Z.iso`
+## Status projektu
+
+- Zweryfikowany obraz AILinux: `ailinux-26.04-amd64-20261013T144048Z.iso`
 - SHA-256: `de744684375ccbc15d6be45acf567cb8549475e9c57cf812c1aed47a8da4b2c7`
-- Agent Zero upstream: https://github.com/frdel/agent-zero
-- LibreChat upstream: https://github.com/danny-avila/LibreChat
-- Deployment of those services is **not yet implemented**; the included Compose file is a placeholder, not an installer.
-- Migration of original agents is **not yet performed**. See [docs/AGENTS.md](docs/AGENTS.md).
-- No running machine, Codespace, or root access has been provisioned by this repository.
+- ISO nie jest przechowywane w Git. Bieżący oficjalny adres pobierania uzyskaj
+  ze strony [ailinux.me](https://ailinux.me/), a następnie użyj:
+  `bash scripts/download-ailinux.sh 'https://DIRECT-OFFICIAL-ISO-URL'`
+- Gotowy plik wdrożeniowy Docker Compose znajduje się w
+  [deploy/ai-studio/](deploy/ai-studio/). Uruchamia LibreChat, modele lokalne
+  przez Ollama oraz ograniczony do odczytu serwer MCP.
+- Konfiguracja wdrożeniowa nie oznacza, że system został zainstalowany na
+  fizycznym komputerze AILinux. Wymaga hosta Linux z Docker Compose.
+- Migracja oryginalnych agentów Aria, Alex, Astyria i Aurelius nie została
+  wykonana. Zobacz [docs/AGENTS.md](docs/AGENTS.md).
 
-## Intended next steps
-1. Download and verify the ISO; install or test it on compatible AMD64 hardware/VM.
-2. Set up Docker, Agent Zero and LibreChat using vetted upstream installation instructions.
-3. Inspect GitHub account/repository permissions for the original agents and connect their existing services, without cloning their identities.
-4. Configure model endpoints, secrets, memory storage and agent permissions. Never commit passwords or API keys.
-5. Verify live chat, terminal actions, persistence and end-to-end communication.
+## Szybki start AI
 
-System administrator controls root. Agent elevation should be explicit, audited and configurable.
+Wymagany jest Docker z Compose v2.24.4 lub nowszym oraz połączenie internetowe
+podczas pobierania obrazów i modeli.
+
+1. Utwórz prywatny plik `.env` na podstawie szablonu:
+
+   ```sh
+   cp deploy/ai-studio/.env.example .env
+   ```
+
+2. Wygeneruj unikalne sekrety i uzupełnij nimi `.env`:
+
+   ```sh
+   openssl rand -hex 32  # CREDS_KEY, JWT_SECRET, JWT_REFRESH_SECRET, MEILI_MASTER_KEY
+   openssl rand -hex 16  # CREDS_IV
+   ```
+
+   Nie używaj tego samego wyniku do więcej niż jednej zmiennej. Nie dodawaj
+   `.env` do Git ani nie przesyłaj go w czacie.
+3. Uruchom cały zestaw:
+
+   ```sh
+   docker compose up -d --build
+   ```
+
+4. Pobierz modele jednorazowo:
+
+   ```sh
+   docker compose exec ollama ollama pull thox-ai/thoxopen-8b-heretic:q4_k_m
+   docker compose exec ollama ollama pull maternion/spark-x2.5-heretic:4b
+   ```
+
+5. Otwórz `http://localhost:3080` i utwórz pierwsze konto administratora.
+   Następnie ustaw `ALLOW_REGISTRATION=false` w `.env` i zastosuj:
+
+   ```sh
+   docker compose up -d --force-recreate api
+   ```
+
+Szczegóły konfiguracji, bezpieczeństwa, kopii zapasowych, migracji i
+rozwiązywania problemów: [deploy/ai-studio/README.md](deploy/ai-studio/README.md).
+
+## AILinux ISO
+
+Nie zapisuj obrazu ISO w Git — plik zajmuje kilka gigabajtów. Pobieranie i
+weryfikacja sumy kontrolnej:
+
+```sh
+bash scripts/download-ailinux.sh 'https://DIRECT-OFFICIAL-ISO-URL'
+```
+
+## Oryginalni agenci
+
+Źródłowe konto GitHub: `mmitek515-netizen`. Nie twórz zamienników o tych samych
+tożsamościach. Przed migracją zweryfikuj dostęp do oryginalnych usług i
+repozytoriów. Migrację uznaj za zakończoną dopiero po sprawdzeniu jej działania
+end-to-end. Dostęp administratora i uprawnienia narzędzi muszą pozostać jawne
+i kontrolowane.

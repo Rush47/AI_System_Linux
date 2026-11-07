@@ -1,4 +1,141 @@
-# Optional companion stack on a Linux host with Docker Compose.
-# Agent Zero and LibreChat have independent upstream deployment guides.
-# Use the upstream-maintained compose configurations to avoid stale or insecure image assumptions.
-services: {}
+services:
+  api:
+    image: registry.librechat.ai/librechat-ai/librechat-dev:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3080"
+      MONGO_URI: mongodb://mongodb:27017/LibreChat
+      MEILI_HOST: http://meilisearch:7700
+      SEARCH: "true"
+      LIBRECHAT_TEMP_CREDENTIALS_PATH: /app/data/.env.temp
+      DEBUG_LOGGING: ${DEBUG_LOGGING:-false}
+    ports:
+      - "${HOST_BIND_IP:-127.0.0.1}:${HOST_PORT:-3080}:3080"
+    volumes:
+      - ./deploy/ai-studio/librechat.yaml:/app/librechat.yaml:ro
+      - librechat_data:/app/data
+      - librechat_uploads:/app/uploads
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+      ubuntu-system-info:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    networks:
+      - app_internal
+      - mcp_internal
+      - ollama_network
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3080/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+
+  mongodb:
+    image: mongo:8.0.20
+    restart: unless-stopped
+    command: mongod --noauth
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app_internal
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - db.adminCommand('ping').ok
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.35.1
+    restart: unless-stopped
+    environment:
+      MEILI_ENV: production
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env}
+    volumes:
+      - meilisearch_data:/meili_data
+    networks:
+      - app_internal
+
+  ubuntu-system-info:
+    build:
+      context: ./deploy/ai-studio/mcp-linux-info
+    image: ai-system-linux-ubuntu-mcp:1.0.0
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - mcp_internal
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      retries: 5
+
+  ollama:
+    build:
+      context: ./deploy/ai-studio/ollama
+    image: ai-system-linux-ollama-cpu:1.0.0
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-8192}
+      OLLAMA_KEEP_ALIVE: 5m
+      OLLAMA_MAX_QUEUE: 32
+      OLLAMA_MAX_LOADED_MODELS: 1
+      OLLAMA_NO_CLOUD: "true"
+      OLLAMA_NUM_PARALLEL: 1
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - ollama_network
+    healthcheck:
+      test:
+        - CMD
+        - ollama
+        - list
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+
+networks:
+  app_internal:
+    internal: true
+  mcp_internal:
+    internal: true
+  ollama_network:
+
+volumes:
+  librechat_data:
+  librechat_uploads:
+  mongodb_data:
+  meilisearch_data:
+  ollama_data:
