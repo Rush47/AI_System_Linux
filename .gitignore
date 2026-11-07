@@ -1,0 +1,7 @@
+downloads/
+*.iso
+.env
+.env.*
+!.env.example
+*.key
+*.pem
