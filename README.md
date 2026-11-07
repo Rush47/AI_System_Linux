@@ -38,17 +38,12 @@ podczas pobierania obrazów i modeli.
 
    Nie używaj tego samego wyniku do więcej niż jednej zmiennej. Nie dodawaj
    `.env` do Git ani nie przesyłaj go w czacie.
-3. Uruchom cały zestaw:
+3. Przed pierwszym uruchomieniem ustaw `ALLOW_REGISTRATION=true` w `.env`,
+   aby móc utworzyć konto administratora.
+4. Uruchom cały zestaw:
 
    ```sh
    docker compose up -d --build
-   ```
-
-4. Pobierz modele jednorazowo:
-
-   ```sh
-   docker compose exec ollama ollama pull thox-ai/thoxopen-8b-heretic:q4_k_m
-   docker compose exec ollama ollama pull maternion/spark-x2.5-heretic:4b
    ```
 
 5. Otwórz `http://localhost:3080` i utwórz pierwsze konto administratora.
@@ -56,6 +51,13 @@ podczas pobierania obrazów i modeli.
 
    ```sh
    docker compose up -d --force-recreate api
+   ```
+
+6. Pobierz modele jednorazowo:
+
+   ```sh
+   docker compose exec ollama ollama pull thox-ai/thoxopen-8b-heretic:q4_k_m
+   docker compose exec ollama ollama pull maternion/spark-x2.5-heretic:4b
    ```
 
 Szczegóły konfiguracji, bezpieczeństwa, kopii zapasowych, migracji i

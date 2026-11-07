@@ -63,8 +63,10 @@ Otwórz `http://localhost:3080`. W Codespaces ustaw `HOST_BIND_IP=0.0.0.0` w
 `.env`, aby forwarding portu działał, i ustaw port 3080 jako **Private** w
 zakładce **Ports**. Nie wystawiaj API Ollama (11434), MongoDB ani Meilisearch.
 
-Pierwsze konto LibreChat staje się administratorem. Po jego utworzeniu ustaw w
-`.env`:
+Szablon `.env.example` domyślnie wyłącza rejestrację. Przed pierwszym
+uruchomieniem ustaw tymczasowo `ALLOW_REGISTRATION=true` w `.env`. Pierwsze
+konto utworzone w LibreChat otrzyma rolę administratora. Zaraz po utworzeniu
+konta ustaw w `.env`:
 
 ```dotenv
 ALLOW_REGISTRATION=false
