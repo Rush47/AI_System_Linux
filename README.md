@@ -61,6 +61,28 @@ podczas pobierania obrazów i modeli.
 Szczegóły konfiguracji, bezpieczeństwa, kopii zapasowych, migracji i
 rozwiązywania problemów: [deploy/ai-studio/README.md](deploy/ai-studio/README.md).
 
+## GitHub na Linuxie
+
+Konfiguracja GitHub CLI i Git po HTTPS, z tokenem podawanym ukrytym wejściem
+terminala:
+
+```sh
+sudo apt install gh
+bash scripts/setup-github.sh
+```
+
+Wygeneruj classic personal access token w
+[ustawieniach GitHub](https://github.com/settings/tokens). Do publicznych
+repozytoriów wystarczyłby `public_repo`, ale logowanie tokenem przez GitHub CLI
+wymaga co najmniej `repo`, `read:org` i `gist`. To oznacza szeroki dostęp classic
+tokena, w tym do prywatnych repozytoriów konta. Dodaj `workflow` tylko wtedy,
+gdy musisz wysyłać zmiany plików GitHub Actions. Jeśli chcesz ograniczyć dostęp
+do jednego repozytorium, użyj fine-grained tokena zamiast classic.
+
+Skrypt nie umieszcza tokena w argumentach procesu, pliku `.env` ani repozytorium.
+Nie wklejaj go do czatu. Po konfiguracji sprawdź `gh auth status`; test push
+wykonaj zwykłym `git push`. Szczegóły i ograniczenia: [docs/GITHUB.md](docs/GITHUB.md).
+
 ## AILinux ISO
 
 Nie zapisuj obrazu ISO w Git — plik zajmuje kilka gigabajtów. Pobieranie i
