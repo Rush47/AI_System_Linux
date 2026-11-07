@@ -1,0 +1,4 @@
+# Optional companion stack on a Linux host with Docker Compose.
+# Agent Zero and LibreChat have independent upstream deployment guides.
+# Use the upstream-maintained compose configurations to avoid stale or insecure image assumptions.
+services: {}
