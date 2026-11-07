@@ -46,6 +46,19 @@ GitHub CLI. W organizacji z SSO może być konieczne osobne autoryzowanie tokena
 
 ## Weryfikacja i użycie
 
+Jeśli token przechowujesz w ignorowanym przez Git pliku `.env` w katalogu
+głównym repozytorium, udostępnij go tylko procesowi GitHub CLI w bieżącym
+terminalu:
+
+```sh
+export GH_TOKEN="$(sed -n 's/^GH_TOKEN=//p' .env)"
+gh auth status
+```
+
+Pole `GH_TOKEN` w `.env` nie jest przekazywane do kontenera LibreChat.
+Bezpieczniejszą alternatywą jest `bash scripts/setup-github.sh`, który pobiera
+token ukrytym wpisem i konfiguruje lokalny magazyn poświadczeń `gh`.
+
 ```sh
 gh auth status
 git remote -v

@@ -9,6 +9,7 @@ services:
       PORT: "3080"
       MONGO_URI: mongodb://mongodb:27017/LibreChat
       MEILI_HOST: http://meilisearch:7700
+      GH_TOKEN: ""
       SEARCH: "true"
       LIBRECHAT_TEMP_CREDENTIALS_PATH: /app/data/.env.temp
       DEBUG_LOGGING: ${DEBUG_LOGGING:-false}
