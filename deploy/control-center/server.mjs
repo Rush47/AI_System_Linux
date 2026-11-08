@@ -8,6 +8,8 @@ const page=await readFile(new URL('./index.html',import.meta.url));
 const model=process.env.SYSTEM_AI_MODEL||'thox-ai/thoxopen-8b-heretic:q4_k_m';
 const fallbackModel=process.env.SYSTEM_AI_FALLBACK_MODEL||'maternion/spark-x2.5-heretic:4b';
 const endpoint=process.env.OLLAMA_URL||'http://ollama:11434';
+const allowedModels=[...new Set([model,fallbackModel,...(process.env.SYSTEM_AI_EXTRA_MODELS||'').split(',').map(s=>s.trim()).filter(Boolean)])];
+
 const prompt='Jesteś System AI, lokalnym asystentem systemu AI Linux na Ubuntu. Działasz przez model Ollama 8B. Wyjaśniaj, diagnozuj i proponuj kroki. Nie twierdź, że wykonałeś polecenia, zmieniłeś pliki lub odczytałeś stan hosta, jeśli nie masz takich narzędzi. Nie podszywaj się pod Aria, Alex, Astyria ani Aurelius.';
 // Strictly read-only diagnostics from the control-center container; never shell-evaluate model output.
 const diagnostics=Object.freeze({
@@ -61,6 +63,14 @@ const server=http.createServer(async(req,res)=>{
     req.on('close',()=>syncClients.delete(res));return;
   }
   if(req.method==='GET'&&['/','/index.html'].includes(req.url)){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(page);return}
+  if(req.method==='GET'&&req.url==='/api/system/models'){
+    try{
+      const response=await fetch(endpoint+'/api/tags',{signal:AbortSignal.timeout(3500)});
+      if(!response.ok)throw Error('Ollama HTTP '+response.status);
+      const data=await response.json();const installed=new Set((data.models||[]).map(m=>m.name||m.model));
+      res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({models:allowedModels.map(name=>({name,installed:installed.has(name)})),defaultModel:model,fallbackModel,ollamaConnected:true}));return;
+    }catch(e){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({models:allowedModels.map(name=>({name,installed:null})),defaultModel:model,fallbackModel,ollamaConnected:false,error:e.message}));return}
+  }
   if(req.method==='GET'&&req.url==='/health'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:true}));return}
   if(req.method==='GET'&&req.url==='/api/diagnostics/live'){
     const check=async(url)=>{try{const r=await fetch(url,{signal:AbortSignal.timeout(2200)});return {reachable:r.ok}}catch{return {reachable:false}}};
@@ -83,7 +93,10 @@ const server=http.createServer(async(req,res)=>{
   if(req.method!=='POST'||req.url!=='/api/system/chat'){res.writeHead(404);res.end();return}
   let input='';try{
     for await(const chunk of req){input+=chunk;if(input.length>16384)throw Error('Za długa wiadomość')}
-    const message=JSON.parse(input).message;
+    const payload=JSON.parse(input);const message=payload.message;
+    const requestedModel=payload.model==null?'':payload.model;
+    if(typeof requestedModel!=='string'||(requestedModel&&!allowedModels.includes(requestedModel)))throw Error('Model nie jest dozwolony');
+    const activeModel=requestedModel||model;
     if(typeof message!=='string'||!message.trim()||message.length>8000)throw Error('Nieprawidłowa wiadomość');
     const diagnostic=await runDiagnostic(message);
     if(diagnostic!==null){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({text:diagnostic}));return}
@@ -94,11 +107,11 @@ const server=http.createServer(async(req,res)=>{
       if(typeof data.message?.content!=='string'||!data.message.content.trim())throw Error('Brak odpowiedzi modelu');
       return data.message.content;
     }
-    let text,usedModel=model,fallback=false;
-    try{text=await ask(model)}catch(primaryError){
-      if(fallbackModel===model)throw primaryError;
+    let text,usedModel=activeModel,fallback=false;
+    try{text=await ask(activeModel)}catch(primaryError){
+      if(fallbackModel===activeModel)throw primaryError;
       try{text=await ask(fallbackModel);usedModel=fallbackModel;fallback=true}
-      catch(fallbackError){throw Error('Model 8B i awaryjny 4B niedostępne: '+primaryError.message+'; '+fallbackError.message)}
+      catch(fallbackError){throw Error('Wybrany model i model awaryjny niedostępne: '+primaryError.message+'; '+fallbackError.message)}
     }
     res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({text,model:usedModel,fallback}));syncBroadcast('chat-completed',{model:usedModel,fallback});
   }catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}
