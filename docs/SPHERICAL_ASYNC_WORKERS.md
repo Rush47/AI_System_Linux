@@ -67,3 +67,18 @@ Status: design specification, not a deployed service.
 - Proposed UI: Spherical Vision tab, source selector, live preview, per-device diagnostics, AI analysis request, stop sharing, and optional separately authorized remote control.
 
 Implementation status: specification only; no real screen capture, WebRTC gateway or device agents deployed yet.
+
+## Autonomous agent daemons and privileged host execution
+
+**Target only — not deployed.** Aria, Alex, Astyria and Aurelius each receive:
+- an independently supervised systemd service with restart-on-failure and startup at boot;
+- a persistent, asynchronous job queue, task deadlines, retries, cancellation, and per-agent activity logs;
+- an authenticated interface to a host administrative executor, capable of performing root-level tasks when permitted;
+- per-agent identity and policy so one agent cannot silently impersonate another;
+- autonomous execution of preapproved low-risk tasks without needing the chat browser open;
+- explicit approval gates for destructive operations, kernel modification, security policy changes, credential access and irreversible actions;
+- a kill switch, task pause and audit trail visible in the Control Center.
+
+Run the agent processes as dedicated non-root service users with systemd sandboxing; grant privileged operations via a narrow, audited root-owned executor. Never grant unrestricted passwordless sudo or expose a root shell to untrusted model output.
+
+Integration of the four **original** AI agent runtimes is deferred until the user imports the application into Google AI Studio. Service scaffolding must not claim that any agent is connected or running before a real endpoint and host have been configured and verified.
