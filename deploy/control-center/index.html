@@ -86,4 +86,8 @@ document.getElementById("nlpTerminalForm").addEventListener("submit",async e=>{
 });
 document.getElementById("nlpCopy").onclick=()=>{if(nlpLastCommand)navigator.clipboard.writeText(nlpLastCommand)};
 document.getElementById("nlpClear").onclick=()=>{nlpLastCommand="";document.getElementById("nlpTerminalOutput").textContent="Terminal wyczyszczony. Root hosta: NIEPODŁĄCZONY"};
+
+const syncStream=new EventSource('/api/sync/events');
+syncStream.onmessage=e=>{try{const event=JSON.parse(e.data);if(event.type==='diagnostics-updated'&&document.getElementById('diagnostics')?.classList.contains('active'))refreshDiagnostics();}catch(err){console.warn('Sync event',err)}};
+syncStream.onerror=()=>console.warn('Global sync: reconnecting');
 </script></body></html>
