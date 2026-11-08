@@ -20,7 +20,7 @@ Operator wydaje po polsku lub angielsku dowolne polecenie w czacie/terminalu; AI
 ## Minimalny interfejs przyszłych narzędzi
 `system_status`, `list_projects`, `github_repository_status`, `propose_command`, `execute_approved_command`, `task_status`, `agent_dispatch`, `agent_result`.
 
-**Stan:** opis architektury i plan, a nie gotowa implementacja MCP/root. Obecny terminal ma tylko `/api/terminal/propose` i zwraca `executed:false`.
+**Stan:** Control Center nie jest serwerem MCP i nie ma executora root. `/api/terminal/propose` nadal tylko zwraca propozycje. Osobny `/api/terminal/execute` przyjmuje wyłącznie identyfikatory sześciu stałych poleceń odczytowych, uruchamia je przez `execFile` w kontenerze Codespaces i wymaga potwierdzenia w UI; nie wykonuje tekstu wygenerowanego przez model.
 
 ## Kryterium gotowości
 W Codespaces użytkownik wpisuje polecenie naturalne; serwer pokazuje plan, autoryzację, realny wynik wykonania i log. W ChatGPT narzędzia MCP są widoczne i poprawnie zwracają dane. Integracje GitHub/Codex są potwierdzone osobno.

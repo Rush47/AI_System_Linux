@@ -7,8 +7,9 @@ opisuje samodzielny, przenośny stos AI. Nie zawiera sekretów ani wag modeli.
 
 - **LibreChat** — interfejs WWW, domyślnie na `http://localhost:3080`.
 - **Ollama CPU-only** — obraz jest budowany na bazie oficjalnego obrazu Ollama,
-  ale nie zawiera zbędnych bibliotek GPU. Port `11434` nie jest publikowany na
-  hoście; API jest dostępne tylko przez sieć Docker. Połączenia z Ollama Cloud
+  ale nie zawiera zbędnych bibliotek GPU. Port `11434` jest publikowany wyłącznie
+  na `127.0.0.1`, aby Control Center w Codespaces mogło używać lokalnego API;
+  nie jest dostępny na publicznym interfejsie hosta. Połączenia z Ollama Cloud
   są wyłączone.
 - **THOX Open Qwen3 8B Heretic Q4_K_M** — model główny; około 5 GB, kontekst
   ograniczony do 8K.

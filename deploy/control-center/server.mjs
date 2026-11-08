@@ -9,14 +9,15 @@ import {readFile} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const exec=promisify(execFile);
-const page=await readFile(new URL('./index.html',import.meta.url));
+const page=(await readFile(new URL('./index.html',import.meta.url),'utf8')).replace('</body>','<script src="/operations.js" defer></script></body>');
+const operationsScript=await readFile(new URL('./operations.js',import.meta.url));
 const fleetMapScript=await readFile(new URL('./fleet-map.js',import.meta.url));
 const shipLabsScript=await readFile(new URL('./ship-labs.js',import.meta.url));
 const projectsScript=await readFile(new URL('./projects.js',import.meta.url));
 const fleetAppsScript=await readFile(new URL('./fleet-apps.js',import.meta.url));
 const model=process.env.SYSTEM_AI_MODEL||'thox-ai/thoxopen-8b-heretic:q4_k_m';
 const fallbackModel=process.env.SYSTEM_AI_FALLBACK_MODEL||'maternion/spark-x2.5-heretic:4b';
-const endpoint=process.env.OLLAMA_URL||'http://ollama:11434';
+const endpoint=process.env.OLLAMA_URL||'http://127.0.0.1:11434';
 const allowedModels=[...new Set([model,fallbackModel,...(process.env.SYSTEM_AI_EXTRA_MODELS||'').split(',').map(s=>s.trim()).filter(Boolean)])];
 
 const prompt='Jesteś System AI, lokalnym asystentem systemu AI Linux na Ubuntu. Działasz przez model Ollama 8B. Wyjaśniaj, diagnozuj i proponuj kroki. Nie twierdź, że wykonałeś polecenia, zmieniłeś pliki lub odczytałeś stan hosta, jeśli nie masz takich narzędzi. Nie podszywaj się pod Aria, Alex, Astyria ani Aurelius.';
@@ -27,6 +28,14 @@ const diagnostics=Object.freeze({
   '/dysk':['df',['-h']],
   '/pamiec':['cat',['/proc/meminfo']],
   '/pamięć':['free',['-h']]
+});
+const safeTerminalOperations=Object.freeze({
+ kernel:{file:'uname',args:['-a'],label:'uname -a'},
+ processes:{file:'ps',args:['-ef'],label:'ps -ef'},
+ disk:{file:'df',args:['-h'],label:'df -h'},
+ memory:{file:'free',args:['-h'],label:'free -h'},
+ workspace:{file:'git',args:['status','--short','--branch'],label:'git status --short --branch'},
+ containers:{file:'docker',args:['compose','ps'],label:'docker compose ps'}
 });
 async function runDiagnostic(message){
   const command=diagnostics[message.trim().toLowerCase()];
@@ -91,6 +100,20 @@ const server=http.createServer(async(req,res)=>{
     }catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
   }
   if(req.method==='GET'&&req.url==='/fleet-apps.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(fleetAppsScript);return}
+  if(req.method==='GET'&&req.url==='/operations.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(operationsScript);return}
+  if(req.method==='GET'&&req.url==='/api/control/status'){
+    let ollama={connected:false,models:[]};
+    try{const response=await fetch(endpoint+'/api/tags',{signal:AbortSignal.timeout(3500)});if(!response.ok)throw Error('Ollama HTTP '+response.status);const data=await response.json();ollama={connected:true,models:(data.models||[]).map(item=>item.name||item.model).filter(Boolean)}}catch(e){ollama.error=e.message}
+    let github={configured:Boolean(process.env.GITHUB_TOKEN),connected:false,repository:process.env.GITHUB_REPOSITORY||'Rush47/AI_System_Linux'};
+    if(github.configured){try{github={configured:true,connected:true,...await githubRepoStatus()}}catch(e){github.error=e.message}}
+    const agents=Object.fromEntries(Object.entries(agentDestinations).map(([name,url])=>[name,{configured:Boolean(url),connected:false}]));
+    const status={ollama:{...ollama,defaultModel:model,fallbackModel},github,openai:{configured:Boolean(process.env.OPENAI_API_KEY),verified:false,model:process.env.OPENAI_MODEL||'gpt-4.1-mini'},integrationsApi:{configured:Boolean(process.env.INTEGRATIONS_TOKEN)},gemini:{configured:Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_FALLBACK_ENABLED==='true'),verified:false},codex:{configured:false,connected:false},mcp:{configured:false,connected:false,detail:'Control Center nie udostępnia serwera MCP; MCP LibreChat jest osobną usługą.'},agents,terminal:{scope:'Kontener Codespaces',hostRoot:false,operations:Object.values(safeTerminalOperations).map(item=>item.label)}};
+    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(status));return;
+  }
+  if(req.method==='GET'&&req.url==='/api/control/logs'){
+    try{const contents=await readStored('/tmp/ai-linux/control-center.log','utf8');const lines=contents.trimEnd().split('\n').slice(-100);res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({lines}))}
+    catch(e){if(e.code==='ENOENT'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({lines:[]}))}else{res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Logs unavailable'}))}}return;
+  }
   if(req.method==='GET'&&req.url==='/api/fleet-apps'){
    try{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await fleetAppsList()))}catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
   }
@@ -291,11 +314,19 @@ const server=http.createServer(async(req,res)=>{
     try{
       let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>8192)throw Error('Too long')}
       const input=JSON.parse(raw);if(typeof input.prompt!=='string'||input.prompt.length>2000||!input.prompt.trim())throw Error('Invalid prompt');
-      const r=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model,stream:false,format:'json',messages:[{role:'system',content:'Return JSON with command, explanation, risk. Propose one Ubuntu or Python command. Do not execute anything.'},{role:'user',content:input.prompt}]}),signal:AbortSignal.timeout(45000)});
+      const r=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model,stream:false,think:false,format:'json',messages:[{role:'system',content:'Return JSON with command, explanation, risk. Propose one Ubuntu or Python command. Do not execute anything.'},{role:'user',content:input.prompt}],options:{num_predict:256}}),signal:AbortSignal.timeout(30000)});
       if(!r.ok)throw Error('Ollama HTTP '+r.status);
       const data=JSON.parse((await r.json()).message.content);
       res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({command:String(data.command||'').slice(0,1500),explanation:String(data.explanation||'').slice(0,2000),risk:String(data.risk||'unknown'),executed:false,hostRootConnected:false}));syncBroadcast('terminal-proposal',{executed:false});
     }catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
+  if(req.method==='POST'&&req.url==='/api/terminal/execute'){
+    try{
+      let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>2048)throw Error('Too large')}
+      const {operation}=JSON.parse(raw);if(typeof operation!=='string'||!Object.hasOwn(safeTerminalOperations,operation))throw Error('Operation is not allowlisted');const selected=safeTerminalOperations[operation];
+      const {stdout,stderr}=await exec(selected.file,selected.args,{cwd:process.cwd(),timeout:10000,maxBuffer:32768,env:{PATH:process.env.PATH||'/usr/local/bin:/usr/bin:/bin',HOME:process.env.HOME||'/tmp'}});
+      res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({executed:true,operation,command:selected.label,scope:'Codespaces container; host root is not connected',stdout:stdout.slice(0,24000),stderr:stderr.slice(0,8000)}));syncBroadcast('terminal-executed',{operation});
+    }catch(e){const code=e.message==='Operation is not allowlisted'?400:503;res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify({executed:false,error:e.message,stdout:String(e.stdout||'').slice(0,24000),stderr:String(e.stderr||'').slice(0,8000)}))}return;
   }
   if(req.method!=='POST'||req.url!=='/api/system/chat'){res.writeHead(404);res.end();return}
   let input='';try{
@@ -308,7 +339,7 @@ const server=http.createServer(async(req,res)=>{
     const diagnostic=await runDiagnostic(message);
     if(diagnostic!==null){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({text:diagnostic}));return}
     async function ask(selectedModel){
-      const response=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,stream:false,messages:[{role:'system',content:prompt},{role:'user',content:message}],options:{num_predict:1024}}),signal:AbortSignal.timeout(45000)});
+      const response=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,stream:false,think:false,messages:[{role:'system',content:prompt},{role:'user',content:message}],options:{num_predict:256}}),signal:AbortSignal.timeout(60000)});
       if(!response.ok)throw Error('Ollama HTTP '+response.status);
       const data=await response.json();
       if(typeof data.message?.content!=='string'||!data.message.content.trim())throw Error('Brak odpowiedzi modelu');

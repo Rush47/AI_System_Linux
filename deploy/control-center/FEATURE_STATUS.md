@@ -4,9 +4,10 @@
 
 | Moduł | Implementacja | Ograniczenie |
 |---|---|---|
-| GUI Control Center | `index.html` | Podgląd wymaga uruchomienia Codespace |
-| Czat lokalny AI | `POST /api/system/chat` | Wymaga Ollama; opcjonalny Gemini fallback |
-| Terminal języka naturalnego | `POST /api/terminal/propose` | Tylko propozycja; `executed:false`, bez roota hosta |
+| GUI Control Center | `index.html`, `operations.js` | Działa na prywatnym porcie Codespaces 3081; zawiera widoki integracji, logów i bezpiecznego terminala |
+| Czat lokalny AI | `POST /api/system/chat` | Ollama 8B i 4B zainstalowane; odpowiedź 8B zweryfikowana w Codespaces, CPU może wydłużać czas odpowiedzi |
+| Terminal języka naturalnego | `POST /api/terminal/propose`, `POST /api/terminal/execute` | Model tylko proponuje komendy; osobny przycisk po potwierdzeniu wykonuje 6 stałych poleceń odczytowych przez `execFile`, bez powłoki i bez roota hosta |
+| Ustawienia i logi | `GET /api/control/status`, `GET /api/control/logs` | Status GitHub i Ollama sprawdzany na żywo; logi ograniczone do 100 ostatnich linii lokalnego serwera |
 | Diagnostyka | `GET /api/diagnostics/live` i predefiniowane odczyty | Nie jest diagnostyką całego hosta Ubuntu |
 | Flota i telemetria | `fleet.mjs`, `fleet-map.js` | Brak potwierdzonych urządzeń; mapa schematyczna |
 | Projekty | `projects.mjs`, `projects.js` | Wymagany trwały katalog danych |
@@ -15,10 +16,17 @@
 | Wzmianki agentów | `POST /api/agents/mentions` | Wymaga realnych URL agentów i tokenów |
 | Wyniki agentów | `POST /api/agents/messages` | Tylko uwierzytelniony callback z poprawnym taskId |
 | OpenAI API | `integrations.mjs` | Wymaga osobnego API key; brak weryfikacji online |
-| GitHub API | `integrations.mjs` | Odczyt metadanych; wymaga GITHUB_TOKEN |
+| GitHub API | `integrations.mjs` | Odczyt repozytorium zweryfikowany w tym Codespace przez `GITHUB_TOKEN`; brak operacji zapisu |
 | Codex | Planowana integracja | Brak działającego wykonawcy zadań Codex |
-| ChatGPT MCP | Planowana integracja | Brak produkcyjnego zdalnego serwera MCP dla ChatGPT |
-| Ubuntu root | Planowany kontrolowany executor | Niepodłączony; Codespaces root dotyczy kontenera |
+| MCP LibreChat | `deploy/ai-studio/mcp-linux-info/server.js` | W tym Codespace health i `tools/list` zwróciły 3 narzędzia tylko do odczytu |
+| ChatGPT MCP | Planowana integracja | Control Center nie jest serwerem MCP; brak zdalnego uwierzytelnionego endpointu HTTPS |
+| Ubuntu root | Planowany kontrolowany executor | Niepodłączony; terminal wykonuje wyłącznie allowlistę odczytową w kontenerze Codespaces |
+
+## Zweryfikowany stan Codespaces
+- Control Center działa na `0.0.0.0:3081`; konfiguracja Codespaces ustawia przekierowanie portu 3081 jako prywatne.
+- Ollama API jest dostępne wyłącznie przez `127.0.0.1:11434`, nie przez publiczny interfejs.
+- Zainstalowane modele: `thox-ai/thoxopen-8b-heretic:q4_k_m` oraz `maternion/spark-x2.5-heretic:4b`.
+- OpenAI/Gemini klucze, Codex i oryginalne endpointy agentów nie są skonfigurowane w bieżącym środowisku.
 
 ## Minimalna weryfikacja
 ```sh
