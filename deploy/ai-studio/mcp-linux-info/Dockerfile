@@ -15,7 +15,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev \
+RUN npm install --omit=dev --package-lock=false \
     && npm cache clean --force \
     && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin mcp
 
