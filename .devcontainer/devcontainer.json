@@ -1,0 +1,18 @@
+{
+  "name": "AI Linux — Codespaces",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "forwardPorts": [
+    3081
+  ],
+  "portsAttributes": {
+    "3081": {
+      "label": "AI Linux Control Center",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
+  },
+  "postCreateCommand": "node --check deploy/control-center/server.mjs && node --check deploy/control-center/integrations.mjs",
+  "postStartCommand": "bash .devcontainer/start-control-center.sh",
+  "remoteUser": "node"
+}
