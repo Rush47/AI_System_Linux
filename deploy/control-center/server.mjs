@@ -6,6 +6,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const exec=promisify(execFile);
 const page=await readFile(new URL('./index.html',import.meta.url));
+const fleetMapScript=await readFile(new URL('./fleet-map.js',import.meta.url));
 const model=process.env.SYSTEM_AI_MODEL||'thox-ai/thoxopen-8b-heretic:q4_k_m';
 const fallbackModel=process.env.SYSTEM_AI_FALLBACK_MODEL||'maternion/spark-x2.5-heretic:4b';
 const endpoint=process.env.OLLAMA_URL||'http://ollama:11434';
@@ -40,6 +41,16 @@ syncHeartbeat.unref();
 const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
+  if(req.method==='GET'&&req.url==='/fleet-map.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(fleetMapScript);return}
+  if(req.method==='POST'&&req.url==='/api/fleet/telemetry'){
+    const token=process.env.FLEET_TELEMETRY_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized device'}));return}
+    try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>4096)throw Error('Too large')}
+      const item=await fleetWrite('telemetry.ingest',JSON.parse(raw));
+      res.writeHead(202,{'Content-Type':'application/json'});res.end(JSON.stringify({accepted:true,shipId:item.id,measuredAt:item.telemetry.measuredAt}));
+      syncBroadcast('fleet-updated',{action:'telemetry.ingest',id:item.id});
+    }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
   if(req.method==='GET'&&req.url==='/api/fleet'){
     try{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await fleetList()))}catch(e){res.writeHead(503);res.end(JSON.stringify({error:e.message}))}return;
   }
