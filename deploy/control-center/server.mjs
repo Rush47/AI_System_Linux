@@ -1,12 +1,14 @@
 import {appendFile,readFile as readStored} from 'node:fs/promises';
 import http from 'node:http';
 import {fleetList,fleetWrite} from './fleet.mjs';
+import {labsList,labsWrite} from './ship-labs.mjs';
 import {readFile} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const exec=promisify(execFile);
 const page=await readFile(new URL('./index.html',import.meta.url));
 const fleetMapScript=await readFile(new URL('./fleet-map.js',import.meta.url));
+const shipLabsScript=await readFile(new URL('./ship-labs.js',import.meta.url));
 const model=process.env.SYSTEM_AI_MODEL||'thox-ai/thoxopen-8b-heretic:q4_k_m';
 const fallbackModel=process.env.SYSTEM_AI_FALLBACK_MODEL||'maternion/spark-x2.5-heretic:4b';
 const endpoint=process.env.OLLAMA_URL||'http://ollama:11434';
@@ -41,6 +43,28 @@ syncHeartbeat.unref();
 const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
+  if(req.method==='GET'&&req.url==='/ship-labs.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(shipLabsScript);return}
+  if(req.method==='GET'&&req.url==='/api/labs'){
+    try{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await labsList()))}catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
+  if(req.method==='POST'&&req.url==='/api/labs'){
+    const token=process.env.FLEET_WRITE_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized operator'}));return}
+    try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>8192)throw Error('Too large')}
+      const {action,payload}=JSON.parse(raw);
+      if(action==='project.create'&&!(await fleetList()).ships.some(x=>x.id===payload?.shipId))throw Error('Nieznany statek');
+      const item=await labsWrite(action,payload||{});
+      res.writeHead(201,{'Content-Type':'application/json'});res.end(JSON.stringify({item}));syncBroadcast('labs-updated',{action,id:item.id});
+    }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
+  if(req.method==='POST'&&req.url==='/api/labs/measurements'){
+    const token=process.env.FLEET_SENSOR_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized sensor'}));return}
+    try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>4096)throw Error('Too large')}
+      const item=await labsWrite('measurement.ingest',JSON.parse(raw),'sensor');
+      res.writeHead(202,{'Content-Type':'application/json'});res.end(JSON.stringify({accepted:true,id:item.id}));syncBroadcast('labs-updated',{action:'measurement.ingest',id:item.id});
+    }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
   if(req.method==='GET'&&req.url==='/fleet-map.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(fleetMapScript);return}
   if(req.method==='POST'&&req.url==='/api/fleet/contacts'){
     const token=process.env.FLEET_SENSOR_TOKEN;
