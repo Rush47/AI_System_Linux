@@ -8,6 +8,7 @@ services:
     environment:
       OLLAMA_URL: http://ollama:11434
       SYSTEM_AI_MODEL: thox-ai/thoxopen-8b-heretic:q4_k_m
+      SYSTEM_AI_FALLBACK_MODEL: maternion/spark-x2.5-heretic:4b
     ports:
       - "${CONTROL_CENTER_BIND_IP:-127.0.0.1}:${CONTROL_CENTER_PORT:-3081}:3081"
     networks:
