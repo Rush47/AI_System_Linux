@@ -6,8 +6,18 @@
  async function refresh(){
   try{
    const [lr,fr]=await Promise.all([fetch('/api/labs',{cache:'no-store'}),fetch('/api/fleet',{cache:'no-store'})]);if(!lr.ok||!fr.ok)throw Error('API niedostępne');
-   const data=await lr.json(),fleet=await fr.json();state.projects=data.projects||[];state.measurements=data.measurements||[];state.ships=fleet.ships||[];
+   const data=await lr.json(),fleet=await fr.json();state.projects=data.projects||[];state.measurements=data.measurements||[];state.ships=fleet.ships||[];state.strains=data.strains||[];state.compounds=data.compounds||[];
    for(const id of ['researchShip','botanyShip']){const select=document.getElementById(id),prev=select.value;select.replaceChildren();for(const ship of state.ships){const o=el('option',ship.name);o.value=ship.id;select.append(o)}if([...select.options].some(o=>o.value===prev))select.value=prev}
+   const strainProject=document.getElementById('strainProject'),compoundStrain=document.getElementById('compoundStrain');
+   strainProject.replaceChildren();compoundStrain.replaceChildren();
+   for(const project of state.projects.filter(x=>x.module==='botanika')){const o=el('option',project.title);o.value=project.id;strainProject.append(o)}
+   for(const strain of state.strains){const o=el('option',strain.name);o.value=strain.id;compoundStrain.append(o)}
+   const strainList=document.getElementById('strainList');strainList.replaceChildren();
+   for(const strain of state.strains){const card=el('div',undefined,'bubble');card.append(el('h3',strain.name),el('p','Gatunek: '+strain.species+' · Pochodzenie: '+strain.origin+' · Status: '+strain.status));strainList.append(card)}
+   if(!state.strains.length)strainList.textContent='Brak zarejestrowanych szczepów';
+   const compoundList=document.getElementById('compoundList');compoundList.replaceChildren();
+   for(const compound of state.compounds){const card=el('div',undefined,'bubble');card.append(el('h3',compound.name),el('p','Szczep: '+(state.strains.find(x=>x.id===compound.strainId)?.name||compound.strainId)+' · '+compound.status),el('p','Podstawa badania: '+compound.evidence));compoundList.append(card)}
+   if(!state.compounds.length)compoundList.textContent='Brak projektów badawczych substancji';
    for(const module of ['badania','botanika']){
     const list=document.getElementById(module==='badania'?'researchProjects':'botanyProjects');list.replaceChildren();
     const projects=state.projects.filter(p=>p.module===module);
@@ -46,6 +56,9 @@
   document.getElementById(id).onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;
    if(await write('project.create',{module,shipId:f.elements.shipId.value,title:f.elements.title.value,description:f.elements.description.value}))f.reset();
   };
+ }
+ for(const [id,action,fields] of [['strainForm','strain.create',['projectId','name','species','origin']],['compoundForm','compound.create',['strainId','name','evidence']]]){
+  document.getElementById(id).onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,payload={};for(const key of fields)payload[key]=form.elements[key].value;if(await write(action,payload))form.reset()};
  }
  document.getElementById('labsRefresh').onclick=refresh;
  window.refreshShipLabs=refresh;
