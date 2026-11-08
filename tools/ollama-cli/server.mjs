@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 const port = Number(process.env.NLP_CLI_PORT || 8765);
 const ollama = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
@@ -28,10 +28,43 @@ const generate = async instruction => {
   if(typeof parsed.command!=='string' || !parsed.command.trim() || parsed.command.length>4000) throw Error('Invalid command');
   return {command:parsed.command,explanation:String(parsed.explanation||'').slice(0,2000)};
 };
+
+const hyperAnchors = {
+  SYSTEM: 'aaaabbbbccccddddeeeeffff00001111',
+  CHAT: '55556666777788889999aaaabbbbcccc',
+  COMPUTE: '0f0f0f0f0f0f0f0ff0f0f0f0f0f0f0f0',
+  DIAGNOSTIC: '3333333333333333cccccccccccccccc'
+};
+const bitDistance = (a,b) => { let x=a^b,n=0;while(x){n+=Number(x&1n);x>>=1n;}return n; };
+const hyperspaceResolve = input => {
+  // Stable 128-bit binary vector; diagnostic classification, not an LLM.
+  const vector=BigInt('0x'+createHash('sha256').update(input).digest('hex').slice(0,32));
+  const scores=Object.fromEntries(Object.entries(hyperAnchors).map(([name,hex])=>[name,1-bitDistance(vector,BigInt('0x'+hex))/128]));
+  const intent=Object.keys(scores).sort((a,b)=>scores[b]-scores[a])[0];
+  return {intent,score:scores[intent],scores,vector:vector.toString(2).padStart(128,'0')};
+};
+const hyperHistory=[];
+const hyperPrompt = async (instruction, resolution) => {
+  const response=await fetch(ollama+'/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,stream:false,prompt:'You are the AI Linux Binary Hyperspace Terminal. Answer in Polish. Explain real system operations accurately; never claim to have executed a command or accessed hardware. Classification metadata is diagnostic only: '+resolution.intent+'. User: '+instruction}),signal:AbortSignal.timeout(90000)});
+  if(!response.ok) throw Error('Ollama HTTP '+response.status);
+  const data=await response.json();
+  return String(data.response||'').trim();
+};
+
 const server=http.createServer(async(req,res)=>{
   if(req.url==='/health') return reply(res,200,{status:'ok',model});
   if(req.headers.authorization!=='Bearer '+token) return reply(res,401,{error:'Unauthorized'});
   try {
+    if(req.method==='GET' && req.url==='/api/hyperos/history') return reply(res,200,{success:true,history:hyperHistory.slice(-100)});
+    if(req.method==='POST' && req.url==='/api/hyperos/console'){
+      const {command}=await read(req);
+      if(typeof command!=='string'||!command.trim()||command.length>2000) return reply(res,400,{error:'Polecenie musi mieć od 1 do 2000 znaków.'});
+      const resolution=hyperspaceResolve(command.trim());
+      const answer=await hyperPrompt(command.trim(),resolution);
+      const item={id:randomUUID(),at:new Date().toISOString(),command:command.trim(),...resolution,reply:answer,nlpProvider:'Ollama ('+model+')',kernelOutput:null};
+      hyperHistory.push(item);if(hyperHistory.length>100)hyperHistory.shift();
+      return reply(res,200,{success:true,...item});
+    }
     if(req.method==='POST' && req.url==='/api/plan'){
       const {instruction}=await read(req);
       if(typeof instruction!=='string'||!instruction.trim()||instruction.length>4000) return reply(res,400,{error:'Invalid instruction'});
