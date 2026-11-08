@@ -42,6 +42,15 @@ const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
   if(req.method==='GET'&&req.url==='/fleet-map.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(fleetMapScript);return}
+  if(req.method==='POST'&&req.url==='/api/fleet/contacts'){
+    const token=process.env.FLEET_SENSOR_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized sensor'}));return}
+    try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>4096)throw Error('Too large')}
+      const item=await fleetWrite('contact.ingest',JSON.parse(raw));
+      res.writeHead(202,{'Content-Type':'application/json'});res.end(JSON.stringify({accepted:true,id:item.id,classification:item.classification}));
+      syncBroadcast('fleet-updated',{action:'contact.ingest',id:item.id});
+    }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
   if(req.method==='POST'&&req.url==='/api/fleet/telemetry'){
     const token=process.env.FLEET_TELEMETRY_TOKEN;
     if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized device'}));return}
