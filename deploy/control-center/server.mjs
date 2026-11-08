@@ -45,7 +45,7 @@ const server=http.createServer(async(req,res)=>{
     const [p,x,o]=await Promise.all([check(prom+'/api/v1/status/buildinfo'),check((process.env.PHOENIX_URL||'http://phoenix:6006')+'/'),check(endpoint+'/api/tags')]);
     const metrics={};
     if(p.reachable)for(const [key,q] of Object.entries({cpu:'100*(1-avg(rate(node_cpu_seconds_total{mode="idle"}[5m])))',ram:'100*(1-node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)'})){try{const r=await fetch(prom+'/api/v1/query?query='+encodeURIComponent(q),{signal:AbortSignal.timeout(2200)});const j=await r.json();const n=Number(j.data?.result?.[0]?.value?.[1]);metrics[key]=Number.isFinite(n)?Math.round(n*10)/10:null}catch{metrics[key]=null}}
-    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({timestamp:new Date().toISOString(),services:{prometheus:p,phoenix:x,ollama:o},metrics}));syncBroadcast('diagnostics-updated');return;
+    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({timestamp:new Date().toISOString(),services:{prometheus:p,phoenix:x,ollama:o},metrics}));return;
   }
   if(req.method==='POST'&&req.url==='/api/terminal/propose'){
     try{
@@ -54,7 +54,7 @@ const server=http.createServer(async(req,res)=>{
       const r=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model,stream:false,format:'json',messages:[{role:'system',content:'Return JSON with command, explanation, risk. Propose one Ubuntu or Python command. Do not execute anything.'},{role:'user',content:input.prompt}]}),signal:AbortSignal.timeout(45000)});
       if(!r.ok)throw Error('Ollama HTTP '+r.status);
       const data=JSON.parse((await r.json()).message.content);
-      res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({command:String(data.command||'').slice(0,1500),explanation:String(data.explanation||'').slice(0,2000),risk:String(data.risk||'unknown'),executed:false,hostRootConnected:false}));
+      res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({command:String(data.command||'').slice(0,1500),explanation:String(data.explanation||'').slice(0,2000),risk:String(data.risk||'unknown'),executed:false,hostRootConnected:false}));syncBroadcast('terminal-proposal',{executed:false});
     }catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
   }
   if(req.method!=='POST'||req.url!=='/api/system/chat'){res.writeHead(404);res.end();return}
@@ -77,7 +77,7 @@ const server=http.createServer(async(req,res)=>{
       try{text=await ask(fallbackModel);usedModel=fallbackModel;fallback=true}
       catch(fallbackError){throw Error('Model 8B i awaryjny 4B niedostępne: '+primaryError.message+'; '+fallbackError.message)}
     }
-    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({text,model:usedModel,fallback}));
+    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({text,model:usedModel,fallback}));syncBroadcast('chat-completed',{model:usedModel,fallback});
   }catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}
 });
 server.listen(3081,'0.0.0.0');
