@@ -49,6 +49,7 @@
   const title=document.createElement('h3');title.textContent=ship.name;detail.append(title);
   const p=document.createElement('p');const t=ship.telemetry;
   p.textContent=t&&t.source==='authenticated-device'?'Ostatni pomiar: '+t.measuredAt+' | x='+t.xAu+' AU, y='+t.yAu+' AU, z='+t.zAu+' AU | '+t.frame:'Brak zweryfikowanych współrzędnych';detail.append(p);
+  const transmit=document.createElement('button');transmit.type='button';transmit.className='primary';transmit.textContent='Nawiąż transmisję';transmit.onclick=()=>openTransmission('ship',ship.id);detail.append(transmit);
   const list=document.createElement('p');list.textContent='Misje: '+(missions.filter(m=>m.shipId===ship.id).map(m=>m.title+' ('+m.status+')').join(', ')||'brak');detail.append(list);
  }
  function refresh(data){ships=data.ships||[];missions=data.missions||[];contacts=data.contacts||[];const list=document.getElementById('solarShips');list.replaceChildren();
@@ -57,8 +58,9 @@
   if(!ships.length)list.textContent='Brak statków w rejestrze';
   drawContacts();if(selected)select(ships.find(s=>s.id===selected.id)||null);draw();
  }
+ function openTransmission(type,id){const picker=document.getElementById('fleetRecipient');picker.value=type+':'+id;document.getElementById('fleetTransmissionText').focus();document.getElementById('fleetTransmissionForm').scrollIntoView({behavior:'smooth',block:'center'})}
  function selectContact(contact){detail.replaceChildren();const title=document.createElement('h3');title.textContent='Kontakt '+contact.contactId;detail.append(title);
-  const p=document.createElement('p');p.textContent='Klasyfikacja: '+contact.classification+' | Sensor: '+contact.sensorId+' | Pomiar: '+contact.measuredAt+' | '+contact.xAu+', '+contact.yAu+', '+contact.zAu+' AU';detail.append(p)}
+  const p=document.createElement('p');p.textContent='Klasyfikacja: '+contact.classification+' | Sensor: '+contact.sensorId+' | Pomiar: '+contact.measuredAt+' | '+contact.xAu+', '+contact.yAu+', '+contact.zAu+' AU';detail.append(p);const transmit=document.createElement('button');transmit.type='button';transmit.className='primary';transmit.textContent='Nawiąż transmisję';transmit.onclick=()=>openTransmission('contact',contact.id);detail.append(transmit)}
  function drawContacts(){const list=document.getElementById('solarContacts');if(!list)return;list.replaceChildren();
   for(const contact of contacts){const b=document.createElement('button');b.type='button';b.className='action';const age=Date.now()-Date.parse(contact.measuredAt);
    b.textContent=contact.contactId+' · '+contact.classification+(age>900000?' · nieaktualny':'');b.onclick=()=>selectContact(contact);list.append(b)}
