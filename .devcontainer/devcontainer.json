@@ -3,13 +3,19 @@
   "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "forwardPorts": [
-    3081
+    3081,
+    3082
   ],
   "portsAttributes": {
     "3081": {
       "label": "AI Linux Control Center",
       "onAutoForward": "notify",
       "visibility": "private"
+    },
+    "3082": {
+      "label": "AI Linux ChatGPT MCP (OAuth)",
+      "onAutoForward": "notify",
+      "visibility": "public"
     }
   },
   "postCreateCommand": "npm ci --prefix deploy/control-center && node --check deploy/control-center/server.mjs && node --check deploy/control-center/integrations.mjs",

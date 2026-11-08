@@ -23,21 +23,49 @@ load_mcp_token() {
 }
 load_mcp_token MCP_AUTH_TOKEN .mcp-auth-token
 load_mcp_token MCP_TERMINAL_TOKEN .mcp-terminal-token
-if curl -fsS --max-time 2 http://127.0.0.1:3081/health >/dev/null 2>&1; then
-  echo "AI Linux Control Center already running on port 3081"
-  exit 0
+if [[ -z "${MCP_PUBLIC_BASE_URL:-}" ]]; then
+  if [[ -n "${CODESPACE_NAME:-}" ]]; then
+    export MCP_PUBLIC_BASE_URL="https://${CODESPACE_NAME}-3082.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
+  else
+    export MCP_PUBLIC_BASE_URL="http://127.0.0.1:3082"
+  fi
 fi
 mkdir -p /tmp/ai-linux
-nohup node deploy/control-center/server.mjs >>/tmp/ai-linux/control-center.log 2>&1 </dev/null &
-pid=$!
-for _ in {1..20}; do
-  if curl -fsS --max-time 1 http://127.0.0.1:3081/health >/dev/null 2>&1; then
-    echo "AI Linux Control Center started (PID $pid) on port 3081"
-    echo "Logs: /tmp/ai-linux/control-center.log"
-    exit 0
+if curl -fsS --max-time 2 http://127.0.0.1:3081/health >/dev/null 2>&1; then
+  echo "AI Linux Control Center already running on port 3081"
+else
+  nohup node deploy/control-center/server.mjs >>/tmp/ai-linux/control-center.log 2>&1 </dev/null &
+  pid=$!
+  for _ in {1..20}; do
+    if curl -fsS --max-time 1 http://127.0.0.1:3081/health >/dev/null 2>&1; then
+      echo "AI Linux Control Center started (PID $pid) on port 3081"
+      break
+    fi
+    sleep 0.5
+  done
+  if ! curl -fsS --max-time 2 http://127.0.0.1:3081/health >/dev/null 2>&1; then
+    echo "AI Linux Control Center failed to become healthy" >&2
+    tail -40 /tmp/ai-linux/control-center.log >&2
+    exit 1
   fi
-  sleep 0.5
-done
-echo "AI Linux Control Center failed to become healthy" >&2
-tail -40 /tmp/ai-linux/control-center.log >&2
-exit 1
+fi
+if curl -fsS --max-time 2 http://127.0.0.1:3082/health >/dev/null 2>&1; then
+  echo "OAuth MCP gateway already running on port 3082"
+else
+  nohup node deploy/control-center/oauth-mcp-gateway.mjs >>/tmp/ai-linux/mcp-gateway.log 2>&1 </dev/null &
+  gateway_pid=$!
+  for _ in {1..20}; do
+    if curl -fsS --max-time 1 http://127.0.0.1:3082/health >/dev/null 2>&1; then
+      echo "OAuth MCP gateway started (PID $gateway_pid) on port 3082"
+      break
+    fi
+    sleep 0.5
+  done
+  if ! curl -fsS --max-time 2 http://127.0.0.1:3082/health >/dev/null 2>&1; then
+    echo "OAuth MCP gateway failed to become healthy" >&2
+    tail -40 /tmp/ai-linux/mcp-gateway.log >&2
+    exit 1
+  fi
+fi
+echo "Control Center: http://127.0.0.1:3081"
+echo "OAuth MCP: $MCP_PUBLIC_BASE_URL/mcp"

@@ -22,7 +22,7 @@
 | GitHub API | `integrations.mjs` | Odczyt repozytorium zweryfikowany w tym Codespace przez `GITHUB_TOKEN`; brak operacji zapisu |
 | Codex | Planowana integracja | Brak działającego wykonawcy zadań Codex |
 | MCP LibreChat | `deploy/ai-studio/mcp-linux-info/server.js` | W tym Codespace health i `tools/list` zwróciły 3 narzędzia tylko do odczytu |
-| ChatGPT MCP | `/mcp` przez prywatny HTTPS Codespaces | Protokół i bearer zweryfikowane lokalnie; prywatny port nie jest osiągalny z ChatGPT zewnętrznego, brak OAuth i publicznego ingressu |
+| Zdalny ChatGPT MCP | `https://<codespace>-3082.<forwarding-domain>/mcp` | Publiczny OAuth 2.1 gateway zweryfikowany przez DCR, PKCE i zdalne `tools/call`; Control Center 3081 nadal prywatny |
 | Ubuntu root | Planowany kontrolowany executor | Niepodłączony; terminal wykonuje wyłącznie allowlistę odczytową w kontenerze Codespaces |
 
 ## Zweryfikowany stan Codespaces
@@ -31,7 +31,8 @@
 - Zainstalowane modele: `thox-ai/thoxopen-8b-heretic:q4_k_m` oraz `maternion/spark-x2.5-heretic:4b`.
 - OpenAI/Gemini klucze, Codex i oryginalne endpointy agentów nie są skonfigurowane w bieżącym środowisku.
 - MCP `initialize`, `tools/list`, `tools/call system_status` i `terminal_execute` zostały zweryfikowane; brak bearer daje HTTP 401. Task do niepodłączonej Aria zwrócił `isError` i nie zmienił logu.
-- MCP endpoint: `https://<codespace>-3081.<forwarding-domain>/mcp`, port prywatny. Tokeny są w ignorowanych plikach `.mcp-auth-token` i `.mcp-terminal-token`, z prawami 0600; ChatGPT OAuth nie jest skonfigurowane.
+- Publiczny MCP endpoint: `https://<codespace>-3082.<forwarding-domain>/mcp`; OAuth DCR/PKCE i zdalne wywołanie system_status zostały przetestowane. 3081 pozostał prywatny.
+- Tokeny zgody OAuth są w ignorowanych plikach `.mcp-auth-token` i `.mcp-terminal-token` (mode 0600); klienty OAuth i refresh tokeny w `.mcp-oauth-state.json` (mode 0600). Access tokeny są pamięciowe.
 - Historia czatu jest przechowywana wyłącznie w `localStorage` przeglądarki; nie jest współdzielona między urządzeniami ani wysyłana jako pamięć długoterminowa serwera.
 
 ## Minimalna weryfikacja

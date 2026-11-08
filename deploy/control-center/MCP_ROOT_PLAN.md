@@ -20,7 +20,7 @@ Operator wydaje po polsku lub angielsku dowolne polecenie w czacie/terminalu; AI
 ## Narzędzia MCP
 `system_status`, `list_projects`, `github_repository_status`, `propose_command`, `execute_approved_command`, `task_status`, `agent_dispatch`, `agent_result`.
 
-**Stan:** Control Center udostępnia stateless Streamable HTTP MCP na `/mcp`, chronione oddzielnymi tokenami bearer operatora i terminala. Narzędzia statusu, agentów, zadań i logów korzystają z rzeczywistych handlerów lokalnych. MCP `terminal_execute` i UI `/api/terminal/execute` przyjmują wyłącznie identyfikatory sześciu stałych poleceń odczytowych, uruchamiają je przez `execFile` w kontenerze Codespaces; nie ma shella ani roota hosta. Zdalny ChatGPT nie ma dostępu do prywatnego portu Codespaces, a OAuth/publiczny gateway pozostają niepodłączone.
+**Stan:** Control Center udostępnia stateless Streamable HTTP MCP na prywatnym 3081; publiczny OAuth 2.1 gateway na 3082 dodaje DCR, Authorization Code + PKCE S256 i refresh tokens, a proxy przekazuje wywołania do prywatnego MCP. Narzędzia statusu, agentów, zadań i logów korzystają z rzeczywistych handlerów lokalnych. MCP `terminal_execute` i UI `/api/terminal/execute` przyjmują wyłącznie identyfikatory sześciu stałych poleceń odczytowych, uruchamiają je przez `execFile` w kontenerze Codespaces; nie ma shella ani roota hosta.
 
 Wdrożone nazwy narzędzi: `system_status`, `list_agents`, `send_message`, `create_task`, `get_task_status`, `get_logs`, `terminal_execute`. Operator token ma dostęp do pierwszych sześciu, terminal token do narzędzi odczytowych i `terminal_execute`. Wysyłka do agenta wymaga skonfigurowanego endpointu i `AGENT_OUTBOUND_TOKEN`; sam HTTP 2xx nie oznacza wykonania.
 
