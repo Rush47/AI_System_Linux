@@ -44,6 +44,24 @@ const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
   if(req.method==='GET'&&req.url==='/ship-labs.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(shipLabsScript);return}
+  if(req.method==='POST'&&req.url==='/api/labs/estimate'){
+    const token=process.env.FLEET_WRITE_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized operator'}));return}
+    try{
+      let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>2048)throw Error('Too large')}
+      const {projectId}=JSON.parse(raw);const data=await labsList();const project=data.projects.find(x=>x.id===projectId);
+      if(!project)throw Error('Nieznany projekt');
+      const measurements=data.measurements.filter(x=>x.projectId===projectId).slice(-30);
+      const instructions='Jesteś analitykiem ETA projektów badawczych i botanicznych. Korzystaj wyłącznie z podanych faktów. Jeśli brak podstaw do sensownego oszacowania, zwróć estimateDays:null. Zwróć TYLKO JSON: {"estimateDays": liczba_dni_lub_null,"confidence":"niska|średnia|wysoka","reason":"krótkie uzasadnienie po polsku","assumptions":"jawne założenia"}. Nie wymyślaj pomiarów ani stanu urządzeń. Szacunek to prognoza, nie fakt.';
+      const response=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model,stream:false,format:'json',messages:[{role:'system',content:instructions},{role:'user',content:JSON.stringify({now:new Date().toISOString(),project,measurements})}]}),signal:AbortSignal.timeout(45000)});
+      if(!response.ok)throw Error('Ollama HTTP '+response.status);
+      const answer=JSON.parse((await response.json()).message?.content||'{}');
+      const days=answer.estimateDays;
+      const valid=typeof days==='number'&&Number.isFinite(days)&&days>=0&&days<=36500;
+      const estimate={projectId,kind:'ai-estimate',estimateDays:valid?days:null,estimatedCompletion:valid?new Date(Date.now()+days*86400000).toISOString():null,confidence:['niska','średnia','wysoka'].includes(answer.confidence)?answer.confidence:'niska',reason:String(answer.reason||'Brak wystarczających podstaw').slice(0,1000),assumptions:String(answer.assumptions||'').slice(0,1000),generatedAt:new Date().toISOString(),model};
+      res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(estimate));
+    }catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
   if(req.method==='GET'&&req.url==='/api/labs'){
     try{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await labsList()))}catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
   }
