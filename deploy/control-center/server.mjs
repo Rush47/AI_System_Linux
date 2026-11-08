@@ -1,5 +1,6 @@
 import {appendFile,readFile as readStored} from 'node:fs/promises';
 import http from 'node:http';
+import {integrationStatus,openaiChat,githubRepoStatus} from './integrations.mjs';
 import {fleetList,fleetWrite} from './fleet.mjs';
 import {labsList,labsWrite} from './ship-labs.mjs';
 import {projectList,projectWrite} from './projects.mjs';
@@ -67,6 +68,28 @@ syncHeartbeat.unref();
 const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
+  if(req.url==='/api/integrations/status'&&req.method==='GET'){
+    const token=process.env.INTEGRATIONS_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401);res.end('Unauthorized');return}
+    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await integrationStatus()));return;
+  }
+  if(req.url==='/api/integrations/github/repository'&&req.method==='GET'){
+    const token=process.env.INTEGRATIONS_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401);res.end('Unauthorized');return}
+    try{const data=await githubRepoStatus();res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(data))}
+    catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
+  if(req.url==='/api/integrations/openai/chat'&&req.method==='POST'){
+    const token=process.env.INTEGRATIONS_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401);res.end('Unauthorized');return}
+    try{
+      let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>8192)throw Error('Too large')}
+      const payload=JSON.parse(raw);
+      if(typeof payload.message!=='string'||!payload.message.trim()||payload.message.length>4000)throw Error('Invalid message');
+      const data=await openaiChat(payload.message);
+      res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(data));
+    }catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
   if(req.method==='GET'&&req.url==='/fleet-apps.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(fleetAppsScript);return}
   if(req.method==='GET'&&req.url==='/api/fleet-apps'){
    try{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await fleetAppsList()))}catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
