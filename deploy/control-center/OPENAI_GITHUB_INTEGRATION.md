@@ -8,11 +8,14 @@ All three require `Authorization: Bearer <INTEGRATIONS_TOKEN>`. Configure `INTEG
 
 Examples (replace the token locally, not in Git):
 ```sh
-curl -H "Authorization: Bearer $INTEGRATIONS_TOKEN" http://127.0.0.1:3000/api/integrations/status
-curl -H "Authorization: Bearer $INTEGRATIONS_TOKEN" http://127.0.0.1:3000/api/integrations/github/repository
-curl -X POST -H "Authorization: Bearer $INTEGRATIONS_TOKEN" -H 'Content-Type: application/json' -d '{"message":"Zaproponuj plan testów"}' http://127.0.0.1:3000/api/integrations/openai/chat
+curl -H "Authorization: Bearer $INTEGRATIONS_TOKEN" http://127.0.0.1:3081/api/integrations/status
+curl -H "Authorization: Bearer $INTEGRATIONS_TOKEN" http://127.0.0.1:3081/api/integrations/github/repository
+curl -X POST -H "Authorization: Bearer $INTEGRATIONS_TOKEN" -H 'Content-Type: application/json' -d '{"message":"Zaproponuj plan testów"}' http://127.0.0.1:3081/api/integrations/openai/chat
 ```
 
 ChatGPT login/subscription is distinct from OpenAI API billing/credentials. Codex cloud tasks are **not** implemented by this adapter; require an explicitly authorized Codex environment/connector. GitHub repo read access does not itself authorize Codex to edit code. Do not claim otherwise.
 
 Security: keep APIs behind authenticated HTTPS reverse proxy, use least-privilege GitHub fine-grained token (read-only metadata for current endpoint), and add per-user sessions, rate limiting and audit logs before exposing to the internet. API calls may incur usage charges. No end-to-end deployment or connection verification was performed.
+
+## Stan wdrożenia
+Adaptery backendu są zapisane w repozytorium; bez sekretów i działającego środowiska nie potwierdzają aktywnej sesji ChatGPT ani uruchomionego Codex. Wersja pierwsza ma tylko odczyt metadanych repozytorium GitHub, nie tworzy commitów/PR przez API.
