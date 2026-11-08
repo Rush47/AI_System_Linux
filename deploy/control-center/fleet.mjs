@@ -16,6 +16,15 @@ export function fleetWrite(action,payload){
   }else if(action==='mission.create'){
    if(!data.ships.some(s=>s.id===payload.shipId)||!validText(payload.title)||!validText(payload.objective||'',2000))throw Error('Wymagany istniejący statek, tytuł i cel');
    item={id:randomUUID(),shipId:payload.shipId,title:payload.title.trim(),objective:payload.objective.trim(),status:'planowana',createdAt:now,updatedAt:now};data.missions.push(item);
+  }else if(action==='telemetry.ingest'){
+   item=data.ships.find(ship=>ship.id===payload.shipId);if(!item)throw Error('Nieznany identyfikator statku');
+   const x=payload.xAu,y=payload.yAu,z=payload.zAu;
+   if(![x,y,z].every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1000))throw Error('Wymagane skończone współrzędne heliocentryczne xAu/yAu/zAu');
+   if(payload.frame!=='heliocentric-ecliptic-J2000')throw Error('Wymagany układ heliocentric-ecliptic-J2000');
+   const measured=Date.parse(payload.measuredAt);
+   if(!Number.isFinite(measured)||measured>Date.now()+60000||measured<Date.now()-86400000)throw Error('Nieprawidłowy lub nieaktualny czas pomiaru');
+   item.telemetry={xAu:x,yAu:y,zAu:z,frame:payload.frame,measuredAt:new Date(measured).toISOString(),receivedAt:now,source:'authenticated-device'};
+   item.updatedAt=now;
   }else if(action==='mission.update'){
    item=data.missions.find(m=>m.id===payload.id);if(!item)throw Error('Nie znaleziono misji');
    if(!['planowana','w przygotowaniu','wstrzymana','zakończona'].includes(payload.status))throw Error('Nieprawidłowy status');
