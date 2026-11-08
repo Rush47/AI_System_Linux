@@ -22,7 +22,16 @@
      form.elements.status.value=p.status;if(p.progress!==null)form.elements.progress.value=p.progress;
      if(p.eta)form.elements.eta.value=p.eta.slice(0,16);
      form.onsubmit=async e=>{e.preventDefault();await write('project.update',{id:p.id,status:form.elements.status.value,progress:form.elements.progress.value===''?null:Number(form.elements.progress.value),eta:form.elements.eta.value?new Date(form.elements.eta.value).toISOString():null,evidence:form.elements.evidence.value})};
-     card.append(form);list.append(card);
+     card.append(form);
+     const estimateButton=el('button','✦ Oszacuj ETA przez AI','action');estimateButton.type='button';
+     const estimateOutput=el('p','Prognoza AI nie została jeszcze obliczona','muted');
+     estimateButton.onclick=async()=>{estimateButton.disabled=true;estimateOutput.textContent='AI analizuje dostępne dane…';
+      try{const r=await fetch('/api/labs/estimate',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+document.getElementById('fleetToken').value},body:JSON.stringify({projectId:p.id})});
+       const d=await r.json();if(!r.ok)throw Error(d.error||'Błąd AI');
+       estimateOutput.textContent=d.estimatedCompletion?'ETA szacowane przez AI: '+new Date(d.estimatedCompletion).toLocaleString('pl-PL')+' · pewność: '+d.confidence+' · '+d.reason+' · Założenia: '+d.assumptions:'AI: nie można wiarygodnie oszacować. '+d.reason;
+      }catch(e){estimateOutput.textContent='Prognoza niedostępna: '+e.message}finally{estimateButton.disabled=false}
+     };
+     card.append(estimateButton,estimateOutput);list.append(card);
     }
     if(!projects.length)list.textContent='Brak zarejestrowanych projektów. Nie wygenerowano przykładowych danych.';
    }
