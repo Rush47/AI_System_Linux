@@ -10,9 +10,9 @@ const prompt='Jesteś System AI, lokalnym asystentem systemu AI Linux na Ubuntu.
 // Strictly read-only diagnostics from the control-center container; never shell-evaluate model output.
 const diagnostics=Object.freeze({
   '/status':['uname',['-a']],
-  '/procesy':['ps',['-eo','pid,comm,%cpu,%mem','--sort=-%cpu']],
+  '/procesy':['ps',[]],
   '/dysk':['df',['-h']],
-  '/pamiec':['free',['-h']],
+  '/pamiec':['cat',['/proc/meminfo']],
   '/pamięć':['free',['-h']]
 });
 async function runDiagnostic(message){
