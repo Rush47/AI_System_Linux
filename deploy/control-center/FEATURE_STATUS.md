@@ -5,7 +5,8 @@
 | Moduł | Implementacja | Ograniczenie |
 |---|---|---|
 | GUI Control Center | `index.html`, `operations.js` | Działa na prywatnym porcie Codespaces 3081; zawiera widoki integracji, logów i bezpiecznego terminala |
-| Czat lokalny AI | `POST /api/system/chat` | Ollama 8B i 4B zainstalowane; odpowiedź 8B zweryfikowana w Codespaces, CPU może wydłużać czas odpowiedzi |
+| Czat lokalny AI | `POST /api/system/chat`, `POST /api/system/chat/stream` | SSE z tokenami Ollama, kontekst do 12 000 znaków, historia 10 rozmów lokalnie w przeglądarce; odpowiedź 8B i streaming 4B zweryfikowane |
+| Pliki czatu | `chat-ui.js` | Podgląd i treść plików tekstowych do 200 KB/pliki, maksymalnie 3 pliki; brak obsługi PDF/obrazów i uploadu serwerowego |
 | Terminal języka naturalnego | `POST /api/terminal/propose`, `POST /api/terminal/execute` | Model tylko proponuje komendy; osobny przycisk po potwierdzeniu wykonuje 6 stałych poleceń odczytowych przez `execFile`, bez powłoki i bez roota hosta |
 | Ustawienia i logi | `GET /api/control/status`, `GET /api/control/logs` | Status GitHub i Ollama sprawdzany na żywo; logi ograniczone do 100 ostatnich linii lokalnego serwera |
 | Diagnostyka | `GET /api/diagnostics/live` i predefiniowane odczyty | Nie jest diagnostyką całego hosta Ubuntu |
@@ -27,6 +28,7 @@
 - Ollama API jest dostępne wyłącznie przez `127.0.0.1:11434`, nie przez publiczny interfejs.
 - Zainstalowane modele: `thox-ai/thoxopen-8b-heretic:q4_k_m` oraz `maternion/spark-x2.5-heretic:4b`.
 - OpenAI/Gemini klucze, Codex i oryginalne endpointy agentów nie są skonfigurowane w bieżącym środowisku.
+- Historia czatu jest przechowywana wyłącznie w `localStorage` przeglądarki; nie jest współdzielona między urządzeniami ani wysyłana jako pamięć długoterminowa serwera.
 
 ## Minimalna weryfikacja
 ```sh

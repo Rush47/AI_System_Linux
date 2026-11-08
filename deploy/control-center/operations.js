@@ -1,6 +1,7 @@
 (() => {
 const nav=document.querySelector('.nav');
 const main=document.querySelector('.main');
+const connectionPill=document.querySelector('.top .pill');
 const operations=[
  {id:'kernel',label:'uname -a'},
  {id:'processes',label:'ps -ef'},
@@ -33,6 +34,7 @@ async function refreshStatus(){
  statusGrid.replaceChildren();
  try{
   const response=await fetch('/api/control/status',{cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);const data=await response.json();
+  if(connectionPill){connectionPill.textContent=data.ollama.connected?'● Ollama · '+data.ollama.models.length+' modeli':'● Ollama offline';connectionPill.classList.toggle('online',data.ollama.connected&&data.ollama.models.length>0)}
   const modelList=data.ollama.models.length?data.ollama.models.join(', '):'brak pobranych modeli';
   renderStatus('ollama','Ollama',data.ollama.connected?modelList:(data.ollama.error||'API niedostępne'),data.ollama.connected);
   renderStatus('github','GitHub',data.github.connected?data.github.repository+' · '+data.github.defaultBranch:(data.github.error||'Brak tokenu GITHUB_TOKEN'),data.github.connected);
@@ -46,6 +48,7 @@ async function refreshStatus(){
  }catch(error){renderStatus('status','Status integracji','Nie udało się odczytać statusu: '+error.message,false)}
 }
 statusButton.addEventListener('click',refreshStatus);refreshStatus();
+setInterval(refreshStatus,30000);
 
 const logs=addView('logs','▤ Logi','Logi Control Center');
 const logsButton=document.createElement('button');logsButton.type='button';logsButton.textContent='↻ Odśwież logi';logs.panel.append(logsButton);

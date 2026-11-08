@@ -9,8 +9,10 @@ import {readFile} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const exec=promisify(execFile);
-const page=(await readFile(new URL('./index.html',import.meta.url),'utf8')).replace('</body>','<script src="/operations.js" defer></script></body>');
+const page=(await readFile(new URL('./index.html',import.meta.url),'utf8')).replace('</head>','<link rel="stylesheet" href="/theme.css"></head>').replace('</body>','<script src="/operations.js" defer></script><script src="/chat-ui.js" defer></script></body>');
 const operationsScript=await readFile(new URL('./operations.js',import.meta.url));
+const themeStyles=await readFile(new URL('./theme.css',import.meta.url));
+const chatUiScript=await readFile(new URL('./chat-ui.js',import.meta.url));
 const fleetMapScript=await readFile(new URL('./fleet-map.js',import.meta.url));
 const shipLabsScript=await readFile(new URL('./ship-labs.js',import.meta.url));
 const projectsScript=await readFile(new URL('./projects.js',import.meta.url));
@@ -101,6 +103,8 @@ const server=http.createServer(async(req,res)=>{
   }
   if(req.method==='GET'&&req.url==='/fleet-apps.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(fleetAppsScript);return}
   if(req.method==='GET'&&req.url==='/operations.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(operationsScript);return}
+  if(req.method==='GET'&&req.url==='/chat-ui.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(chatUiScript);return}
+  if(req.method==='GET'&&req.url==='/theme.css'){res.writeHead(200,{'Content-Type':'text/css; charset=utf-8'});res.end(themeStyles);return}
   if(req.method==='GET'&&req.url==='/api/control/status'){
     let ollama={connected:false,models:[]};
     try{const response=await fetch(endpoint+'/api/tags',{signal:AbortSignal.timeout(3500)});if(!response.ok)throw Error('Ollama HTTP '+response.status);const data=await response.json();ollama={connected:true,models:(data.models||[]).map(item=>item.name||item.model).filter(Boolean)}}catch(e){ollama.error=e.message}
@@ -328,18 +332,73 @@ const server=http.createServer(async(req,res)=>{
       res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({executed:true,operation,command:selected.label,scope:'Codespaces container; host root is not connected',stdout:stdout.slice(0,24000),stderr:stderr.slice(0,8000)}));syncBroadcast('terminal-executed',{operation});
     }catch(e){const code=e.message==='Operation is not allowlisted'?400:503;res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify({executed:false,error:e.message,stdout:String(e.stdout||'').slice(0,24000),stderr:String(e.stderr||'').slice(0,8000)}))}return;
   }
+  if(req.method==='POST'&&req.url==='/api/system/chat/stream'){
+    let raw='';try{
+      for await(const chunk of req){raw+=chunk;if(raw.length>32768)throw Error('Za długa wiadomość')}
+      const payload=JSON.parse(raw);const message=payload.message;const requestedModel=payload.model==null?'':payload.model;
+      if(typeof requestedModel!=='string'||(requestedModel&&!allowedModels.includes(requestedModel)))throw Error('Model nie jest dozwolony');
+      if(typeof message!=='string'||!message.trim()||message.length>8000)throw Error('Nieprawidłowa wiadomość');
+      const history=payload.history==null?[]:payload.history;
+      if(!Array.isArray(history)||history.length>16||history.some(item=>!item||!['user','assistant'].includes(item.role)||typeof item.content!=='string'||item.content.length>8000))throw Error('Nieprawidłowa historia rozmowy');
+      const historyMessages=history.map(item=>({role:item.role,content:item.content}));
+      if(historyMessages.reduce((size,item)=>size+item.content.length,0)>24000)throw Error('Historia rozmowy jest za długa');
+      const activeModel=requestedModel||model;
+      const diagnostic=await runDiagnostic(message);
+      if(diagnostic!==null){res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write('event: meta\ndata: '+JSON.stringify({model:'diagnostics',fallback:false,provider:'codespaces'})+'\n\n');res.write('event: delta\ndata: '+JSON.stringify({text:diagnostic})+'\n\n');res.write('event: complete\ndata: {}\n\n');res.end();return}
+      const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),120000);timeout.unref();
+      res.on('close',()=>{if(!res.writableEnded)controller.abort()});
+      const requestBody=selectedModel=>JSON.stringify({model:selectedModel,stream:true,think:false,messages:[{role:'system',content:prompt},...historyMessages,{role:'user',content:message}],options:{num_predict:512}});
+      let upstream,usedModel=activeModel,fallback=false;
+      try{
+        upstream=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:requestBody(activeModel),signal:controller.signal});
+        if(!upstream.ok)throw Error('Ollama HTTP '+upstream.status);
+      }catch(primaryError){
+        if(controller.signal.aborted||fallbackModel===activeModel)throw primaryError;
+        upstream=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:requestBody(fallbackModel),signal:controller.signal});
+        if(!upstream.ok)throw Error('Fallback Ollama HTTP '+upstream.status);
+        usedModel=fallbackModel;fallback=true;
+      }
+      res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});
+      const send=(event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
+      send('meta',{model:usedModel,fallback,provider:'ollama'});
+      const decoder=new TextDecoder();let pending='';let completed=false;
+      const consumeLine=line=>{
+        if(!line.trim())return;
+        const item=JSON.parse(line);
+        if(item.error)throw Error(String(item.error).slice(0,500));
+        const delta=item.message?.content;
+        if(typeof delta==='string'&&delta)send('delta',{text:delta});
+        if(item.done)completed=true;
+      };
+      for await(const chunk of upstream.body){
+        pending+=decoder.decode(chunk,{stream:true});let newline;
+        while((newline=pending.indexOf('\n'))!==-1){const line=pending.slice(0,newline);pending=pending.slice(newline+1);consumeLine(line)}
+      }
+      pending+=decoder.decode();if(pending.trim())consumeLine(pending);
+      if(!completed)throw Error('Strumień Ollama zakończył się bez znacznika done');
+      send('complete',{model:usedModel,fallback,provider:'ollama'});res.end();syncBroadcast('chat-completed',{model:usedModel,fallback,provider:'ollama'});
+      clearTimeout(timeout);return;
+    }catch(e){
+      if(res.headersSent){if(!res.destroyed){res.write('event: error\ndata: '+JSON.stringify({error:e.message})+'\n\n');res.end()}}
+      else{res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}
+    }return;
+  }
   if(req.method!=='POST'||req.url!=='/api/system/chat'){res.writeHead(404);res.end();return}
   let input='';try{
-    for await(const chunk of req){input+=chunk;if(input.length>16384)throw Error('Za długa wiadomość')}
+    for await(const chunk of req){input+=chunk;if(input.length>32768)throw Error('Za długa wiadomość')}
     const payload=JSON.parse(input);const message=payload.message;
     const requestedModel=payload.model==null?'':payload.model;
     if(typeof requestedModel!=='string'||(requestedModel&&!allowedModels.includes(requestedModel)))throw Error('Model nie jest dozwolony');
     const activeModel=requestedModel||model;
     if(typeof message!=='string'||!message.trim()||message.length>8000)throw Error('Nieprawidłowa wiadomość');
+    const history=payload.history==null?[]:payload.history;
+    if(!Array.isArray(history)||history.length>16||history.some(item=>!item||!['user','assistant'].includes(item.role)||typeof item.content!=='string'||item.content.length>8000))throw Error('Nieprawidłowa historia rozmowy');
+    const historyMessages=history.map(item=>({role:item.role,content:item.content}));
+    if(historyMessages.reduce((size,item)=>size+item.content.length,0)>24000)throw Error('Historia rozmowy jest za długa');
     const diagnostic=await runDiagnostic(message);
     if(diagnostic!==null){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({text:diagnostic}));return}
     async function ask(selectedModel){
-      const response=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,stream:false,think:false,messages:[{role:'system',content:prompt},{role:'user',content:message}],options:{num_predict:256}}),signal:AbortSignal.timeout(60000)});
+      const response=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,stream:false,think:false,messages:[{role:'system',content:prompt},...historyMessages,{role:'user',content:message}],options:{num_predict:256}}),signal:AbortSignal.timeout(60000)});
       if(!response.ok)throw Error('Ollama HTTP '+response.status);
       const data=await response.json();
       if(typeof data.message?.content!=='string'||!data.message.content.trim())throw Error('Brak odpowiedzi modelu');
