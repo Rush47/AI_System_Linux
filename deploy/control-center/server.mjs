@@ -111,7 +111,7 @@ const server=http.createServer(async(req,res)=>{
     async function askGemini(){
       const key=process.env.GEMINI_API_KEY;
       if(!key)throw Error('GEMINI_API_KEY not configured');
-      const geminiModel=process.env.GEMINI_FALLBACK_MODEL||'gemini-3.1-flash-lite-preview';
+      const geminiModel=process.env.GEMINI_FALLBACK_MODEL||'gemini-3.1-flash-lite';
       if(!/^[a-zA-Z0-9._-]+$/.test(geminiModel))throw Error('Invalid Gemini model name');
       const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(geminiModel)+':generateContent';
       const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify({systemInstruction:{parts:[{text:prompt}]},contents:[{role:'user',parts:[{text:message}]}],generationConfig:{maxOutputTokens:1024}}),signal:AbortSignal.timeout(45000)});
