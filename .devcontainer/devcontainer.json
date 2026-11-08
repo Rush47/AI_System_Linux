@@ -12,7 +12,7 @@
       "visibility": "private"
     }
   },
-  "postCreateCommand": "node --check deploy/control-center/server.mjs && node --check deploy/control-center/integrations.mjs",
+  "postCreateCommand": "npm ci --prefix deploy/control-center && node --check deploy/control-center/server.mjs && node --check deploy/control-center/integrations.mjs",
   "postStartCommand": "bash .devcontainer/start-control-center.sh",
   "remoteUser": "node"
 }

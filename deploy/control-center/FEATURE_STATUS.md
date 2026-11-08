@@ -16,11 +16,13 @@
 | Botanika i badania | `ship-labs.mjs`, `ship-labs.js` | AI ETA to prognoza, nie pomiar |
 | Wzmianki agentów | `POST /api/agents/mentions` | Wymaga realnych URL agentów i tokenów |
 | Wyniki agentów | `POST /api/agents/messages` | Tylko uwierzytelniony callback z poprawnym taskId |
+| MCP Control Center | `POST /mcp` | Streamable HTTP, stateless; bearer operatora dla odczytu/zadań i oddzielny bearer terminala |
+| MCP narzędzia | `system_status`, `list_agents`, `send_message`, `create_task`, `get_task_status`, `get_logs`, `terminal_execute` | Status/callbacki są rzeczywiste; wysyłka zadań kończy się błędem bez endpointu; terminal to sześć poleceń odczytowych |
 | OpenAI API | `integrations.mjs` | Wymaga osobnego API key; brak weryfikacji online |
 | GitHub API | `integrations.mjs` | Odczyt repozytorium zweryfikowany w tym Codespace przez `GITHUB_TOKEN`; brak operacji zapisu |
 | Codex | Planowana integracja | Brak działającego wykonawcy zadań Codex |
 | MCP LibreChat | `deploy/ai-studio/mcp-linux-info/server.js` | W tym Codespace health i `tools/list` zwróciły 3 narzędzia tylko do odczytu |
-| ChatGPT MCP | Planowana integracja | Control Center nie jest serwerem MCP; brak zdalnego uwierzytelnionego endpointu HTTPS |
+| ChatGPT MCP | `/mcp` przez prywatny HTTPS Codespaces | Protokół i bearer zweryfikowane lokalnie; prywatny port nie jest osiągalny z ChatGPT zewnętrznego, brak OAuth i publicznego ingressu |
 | Ubuntu root | Planowany kontrolowany executor | Niepodłączony; terminal wykonuje wyłącznie allowlistę odczytową w kontenerze Codespaces |
 
 ## Zweryfikowany stan Codespaces
@@ -28,6 +30,8 @@
 - Ollama API jest dostępne wyłącznie przez `127.0.0.1:11434`, nie przez publiczny interfejs.
 - Zainstalowane modele: `thox-ai/thoxopen-8b-heretic:q4_k_m` oraz `maternion/spark-x2.5-heretic:4b`.
 - OpenAI/Gemini klucze, Codex i oryginalne endpointy agentów nie są skonfigurowane w bieżącym środowisku.
+- MCP `initialize`, `tools/list`, `tools/call system_status` i `terminal_execute` zostały zweryfikowane; brak bearer daje HTTP 401. Task do niepodłączonej Aria zwrócił `isError` i nie zmienił logu.
+- MCP endpoint: `https://<codespace>-3081.<forwarding-domain>/mcp`, port prywatny. Tokeny są w ignorowanych plikach `.mcp-auth-token` i `.mcp-terminal-token`, z prawami 0600; ChatGPT OAuth nie jest skonfigurowane.
 - Historia czatu jest przechowywana wyłącznie w `localStorage` przeglądarki; nie jest współdzielona między urządzeniami ani wysyłana jako pamięć długoterminowa serwera.
 
 ## Minimalna weryfikacja

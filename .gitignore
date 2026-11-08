@@ -5,3 +5,5 @@ downloads/
 !.env.example
 *.key
 *.pem
+node_modules/
+.mcp-*-token

@@ -8,6 +8,7 @@ import {fleetAppsList,fleetAppsWrite} from './fleet-apps.mjs';
 import {readFile} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {handleMcpRequest} from './mcp.mjs';
 const exec=promisify(execFile);
 const page=(await readFile(new URL('./index.html',import.meta.url),'utf8')).replace('</head>','<link rel="stylesheet" href="/theme.css"></head>').replace('</body>','<script src="/operations.js" defer></script><script src="/chat-ui.js" defer></script></body>');
 const operationsScript=await readFile(new URL('./operations.js',import.meta.url));
@@ -47,6 +48,8 @@ async function runDiagnostic(message){
 }
 const agentNames=new Set(['Aria','Alex','Astyria','Aurelius']);
 const outgoingTasks=new Map();
+const taskHistoryPath=process.env.AGENT_TASKS_PATH||'/tmp/ai-linux-agent-tasks.jsonl';
+const taskResultsPath=process.env.AGENT_TASK_RESULTS_PATH||'/tmp/ai-linux-agent-delivery.jsonl';
 const agentDestinations={
  aria:process.env.ARIA_TASK_URL,alex:process.env.ALEX_TASK_URL,
  astyria:process.env.ASTYRIA_TASK_URL,aurelius:process.env.AURELIUS_TASK_URL
@@ -68,7 +71,7 @@ async function dispatchAgentTask(task,agent){
 
 const inboxPath=process.env.AGENT_INBOX_PATH||'/tmp/ai-linux-agent-inbox.jsonl';
 let inbox=[];
-try{inbox=(await readStored(inboxPath,'utf8')).split('\\n').filter(Boolean).slice(-500).map(line=>JSON.parse(line))}catch(e){if(e.code!=='ENOENT')console.error('Agent inbox unavailable:',e.message)}
+try{inbox=(await readStored(inboxPath,'utf8')).split('\n').filter(Boolean).slice(-500).map(line=>JSON.parse(line))}catch(e){if(e.code!=='ENOENT')console.error('Agent inbox unavailable:',e.message)}
 const syncClients=new Set();let syncRevision=0;
 function syncBroadcast(type,details={}) {
  const event=JSON.stringify({revision:++syncRevision,type,details,timestamp:new Date().toISOString()});
@@ -76,9 +79,75 @@ function syncBroadcast(type,details={}) {
 }
 const syncHeartbeat=setInterval(()=>{for(const client of syncClients){try{client.write(': heartbeat\\n\\n')}catch{syncClients.delete(client)}}},20000);
 syncHeartbeat.unref();
+const controlCenterUrl=(process.env.CONTROL_CENTER_URL||'http://127.0.0.1:3081').replace(/\/$/,'');
+async function mcpSystemStatus(){
+ const response=await fetch(controlCenterUrl+'/api/control/status',{signal:AbortSignal.timeout(5000)});
+ if(!response.ok)throw Error('Control Center status HTTP '+response.status);
+ return response.json();
+}
+function mcpListAgents(){
+ const now=Date.now();
+ return {agents:Object.entries(agentDestinations).map(([id,url])=>{
+  const recent=[...inbox].reverse().find(item=>item.agent?.toLowerCase()===id&&item.taskId&&now-Date.parse(item.timestamp)<15*60*1000);
+  const pendingTasks=[...outgoingTasks.values()].filter(task=>task.mentions?.includes(id)&&['queued-not-delivered','accepted-by-endpoint','pending'].includes(task.status)).length;
+  return {id,name:[...agentNames].find(name=>name.toLowerCase()===id),endpointConfigured:Boolean(url),status:recent?'online':url?'unverified':'offline',workerVerified:Boolean(recent),lastAuthenticatedResultAt:recent?.timestamp||null,pendingTasks};
+ })};
+}
+async function mcpTaskStatus(taskId){
+ if(outgoingTasks.has(taskId))return outgoingTasks.get(taskId);
+ for(const path of [taskResultsPath,taskHistoryPath]){
+  try{const rows=(await readStored(path,'utf8')).split('\n').filter(Boolean);for(let index=rows.length-1;index>=0;index--){const item=JSON.parse(rows[index]);if(item.id===taskId)return item}}
+  catch(error){if(error.code!=='ENOENT')throw Error('Agent task history unavailable')}
+ }
+ throw Error('Unknown task id');
+}
+async function mcpCreateAgentTask(agent,text){
+ const normalized=String(agent).toLowerCase();
+ if(!Object.hasOwn(agentDestinations,normalized))throw Error('Unknown original agent');
+ if(!agentDestinations[normalized])throw Error('Agent endpoint is not configured');
+ if(!process.env.AGENT_OUTBOUND_TOKEN)throw Error('AGENT_OUTBOUND_TOKEN is not configured');
+ if(typeof text!=='string'||!text.trim()||text.length>4000)throw Error('Task must contain 1-4000 characters');
+ const agentName=[...agentNames].find(name=>name.toLowerCase()===normalized);
+ const task={id:Date.now()+'-'+Math.random().toString(36).slice(2,10),mentions:[normalized],text:text.trim(),channel:agentName,status:'queued-not-delivered',timestamp:new Date().toISOString()};
+ await appendFile(taskHistoryPath,JSON.stringify(task)+'\n',{mode:0o600});outgoingTasks.set(task.id,{...task,delivery:[{agent:normalized,status:'pending'}]});syncBroadcast('agent-task-queued',task);
+ const delivery=await dispatchAgentTask(task,normalized);const previous=outgoingTasks.get(task.id);
+ const state={...task,delivery:[delivery],status:previous?.status==='result-received'?'result-received':delivery.status};
+ outgoingTasks.set(task.id,state);await appendFile(taskResultsPath,JSON.stringify(state)+'\n',{mode:0o600});syncBroadcast('agent-task-delivery',state);
+ return {taskId:task.id,agent:agentName,status:state.status,executionVerified:state.status==='result-received',delivery};
+}
+async function mcpLogs(lines=50){
+ const count=Math.max(1,Math.min(Number.isInteger(lines)?lines:50,100));
+ try{
+  const contents=await readStored('/tmp/ai-linux/control-center.log','utf8');
+  let output=contents.trimEnd().split('\n').slice(-count);
+  for(const secret of [process.env.MCP_AUTH_TOKEN,process.env.MCP_TERMINAL_TOKEN,process.env.AGENT_OUTBOUND_TOKEN,process.env.AGENT_INGEST_TOKEN].filter(Boolean))output=output.map(line=>line.split(secret).join('[REDACTED]'));
+  return {source:'control-center',lines:output};
+ }catch(error){if(error.code==='ENOENT')return {source:'control-center',lines:[]};throw Error('Control Center logs unavailable')}
+}
+async function mcpTerminalExecute(operation){
+ if(typeof operation!=='string'||!Object.hasOwn(safeTerminalOperations,operation))throw Error('Operation is not allowlisted');
+ const selected=safeTerminalOperations[operation];
+ const {stdout,stderr}=await exec(selected.file,selected.args,{cwd:process.cwd(),timeout:10000,maxBuffer:32768,env:{PATH:process.env.PATH||'/usr/local/bin:/usr/bin:/bin',HOME:process.env.HOME||'/tmp'}});
+ syncBroadcast('terminal-executed',{operation});
+ return {executed:true,operation,command:selected.label,scope:'Codespaces container; host root is not connected',stdout:stdout.slice(0,24000),stderr:stderr.slice(0,8000)};
+}
 const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
+  if(new URL(req.url,'http://localhost').pathname==='/mcp'){
+    await handleMcpRequest(req,res,{
+      authToken:process.env.MCP_AUTH_TOKEN,
+      terminalToken:process.env.MCP_TERMINAL_TOKEN,
+      systemStatus:mcpSystemStatus,
+      listAgents:mcpListAgents,
+      sendMessage:(agent,message)=>mcpCreateAgentTask(agent,message),
+      createTask:(agent,task)=>mcpCreateAgentTask(agent,task),
+      getTaskStatus:mcpTaskStatus,
+      getLogs:mcpLogs,
+      terminalExecute:mcpTerminalExecute,
+    });
+    return;
+  }
   if(req.url==='/api/integrations/status'&&req.method==='GET'){
     const token=process.env.INTEGRATIONS_TOKEN;
     if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401);res.end('Unauthorized');return}
@@ -111,7 +180,8 @@ const server=http.createServer(async(req,res)=>{
     let github={configured:Boolean(process.env.GITHUB_TOKEN),connected:false,repository:process.env.GITHUB_REPOSITORY||'Rush47/AI_System_Linux'};
     if(github.configured){try{github={configured:true,connected:true,...await githubRepoStatus()}}catch(e){github.error=e.message}}
     const agents=Object.fromEntries(Object.entries(agentDestinations).map(([name,url])=>[name,{configured:Boolean(url),connected:false}]));
-    const status={ollama:{...ollama,defaultModel:model,fallbackModel},github,openai:{configured:Boolean(process.env.OPENAI_API_KEY),verified:false,model:process.env.OPENAI_MODEL||'gpt-4.1-mini'},integrationsApi:{configured:Boolean(process.env.INTEGRATIONS_TOKEN)},gemini:{configured:Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_FALLBACK_ENABLED==='true'),verified:false},codex:{configured:false,connected:false},mcp:{configured:false,connected:false,detail:'Control Center nie udostępnia serwera MCP; MCP LibreChat jest osobną usługą.'},agents,terminal:{scope:'Kontener Codespaces',hostRoot:false,operations:Object.values(safeTerminalOperations).map(item=>item.label)}};
+    const mcpConfigured=Boolean(process.env.MCP_AUTH_TOKEN&&process.env.MCP_TERMINAL_TOKEN&&process.env.MCP_AUTH_TOKEN!==process.env.MCP_TERMINAL_TOKEN);
+    const status={ollama:{...ollama,defaultModel:model,fallbackModel},github,openai:{configured:Boolean(process.env.OPENAI_API_KEY),verified:false,model:process.env.OPENAI_MODEL||'gpt-4.1-mini'},integrationsApi:{configured:Boolean(process.env.INTEGRATIONS_TOKEN)},gemini:{configured:Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_FALLBACK_ENABLED==='true'),verified:false},codex:{configured:false,connected:false},mcp:{configured:mcpConfigured,connected:mcpConfigured,endpoint:'/mcp',transport:'Streamable HTTP',authentication:'Bearer operator/terminal tokens',detail:mcpConfigured?'Chroniony endpoint Streamable HTTP aktywny; terminal wymaga osobnego MCP_TERMINAL_TOKEN.':'MCP wymaga dwóch różnych tokenów bearer.'},agents,terminal:{scope:'Kontener Codespaces',hostRoot:false,operations:Object.values(safeTerminalOperations).map(item=>item.label)}};
     res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(status));return;
   }
   if(req.method==='GET'&&req.url==='/api/control/logs'){
@@ -256,7 +326,7 @@ const server=http.createServer(async(req,res)=>{
       void Promise.all(mentions.map(agent=>dispatchAgentTask(task,agent))).then(async delivery=>{
        const state={...task,delivery,status:delivery.every(x=>x.status==='accepted-by-endpoint')?'accepted-by-endpoints':'partially-or-not-delivered'};
        outgoingTasks.set(task.id,state);
-       try{await appendFile(process.env.AGENT_TASK_RESULTS_PATH||'/tmp/ai-linux-agent-delivery.jsonl',JSON.stringify(state)+'\\n',{mode:0o600})}catch(e){console.error('Agent delivery log:',e.message)}
+      try{await appendFile(taskResultsPath,JSON.stringify(state)+'\n',{mode:0o600})}catch(e){console.error('Agent delivery log:',e.message)}
        syncBroadcast('agent-task-delivery',state);
       }).catch(e=>console.error('Agent dispatch:',e.message));
     }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
@@ -285,7 +355,7 @@ const server=http.createServer(async(req,res)=>{
       }
       const message={id:Date.now()*1000+Math.floor(Math.random()*1000),agent:payload.agent,channel:payload.channel||payload.agent,text:payload.text,taskId,timestamp:new Date().toISOString()};
       if(taskId){const task=outgoingTasks.get(taskId);outgoingTasks.set(taskId,{...task,status:'result-received',lastResultAt:message.timestamp});syncBroadcast('agent-task-result',{taskId,agent:payload.agent})}
-      await appendFile(inboxPath,JSON.stringify(message)+'\\n',{mode:0o600});
+      await appendFile(inboxPath,JSON.stringify(message)+'\n',{mode:0o600});
       inbox.push(message);if(inbox.length>500)inbox=inbox.slice(-500);
       syncBroadcast('agent-message',message);
       res.writeHead(201,{'Content-Type':'application/json'});res.end(JSON.stringify({accepted:true,id:message.id}));
