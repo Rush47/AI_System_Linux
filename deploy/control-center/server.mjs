@@ -60,6 +60,23 @@ const server=http.createServer(async(req,res)=>{
       syncBroadcast('fleet-updated',{action:'telemetry.ingest',id:item.id});
     }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
   }
+  if(req.url?.startsWith('/api/fleet/transmissions/device/')){
+    const token=process.env.FLEET_DEVICE_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized device'}));return}
+    const shipId=decodeURIComponent(req.url.split('/')[5]?.split('?')[0]||'');
+    try{
+      if(!(await fleetList()).ships.some(x=>x.id===shipId))throw Error('Unknown ship');
+      if(req.method==='GET'){
+        const data=await fleetList();const messages=(data.transmissions||[]).filter(x=>x.targetType==='ship'&&x.targetId===shipId&&x.status==='oczekuje na kanał');
+        res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({messages}));return;
+      }
+      if(req.method==='POST'){
+        let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>2048)throw Error('Too large')}
+        const body=JSON.parse(raw);const item=await fleetWrite('transmission.ack',{shipId,id:body.id,status:body.status});
+        res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({id:item.id,status:item.status}));syncBroadcast('fleet-updated',{action:'transmission.ack',id:item.id});return;
+      }
+    }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}));return}
+  }
   if(req.method==='GET'&&req.url==='/api/fleet'){
     try{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await fleetList()))}catch(e){res.writeHead(503);res.end(JSON.stringify({error:e.message}))}return;
   }
