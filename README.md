@@ -101,3 +101,17 @@ tożsamościach. Przed migracją zweryfikuj dostęp do oryginalnych usług i
 repozytoriów. Migrację uznaj za zakończoną dopiero po sprawdzeniu jej działania
 end-to-end. Dostęp administratora i uprawnienia narzędzi muszą pozostać jawne
 i kontrolowane.
+
+
+## AI Linux Control Center — szybki start w Codespaces (gałąź robocza)
+
+> **Uwaga:** to odrębny panel od LibreChat na porcie 3080. Poniższe funkcje znajdują się na gałęzi `feature/ubuntu-ai-linux-control-center`, niekoniecznie na `main`.
+
+1. W GitHub wybierz gałąź `feature/ubuntu-ai-linux-control-center` i otwórz **Code → Codespaces → Create codespace**.
+2. Poczekaj na automatyczny start usługi; w **Ports** otwórz prywatny port **3081**.
+3. Jeżeli nie działa, uruchom `bash .devcontainer/start-control-center.sh` i sprawdź `curl -fsS http://127.0.0.1:3081/health`.
+4. Czat AI wymaga osiągalnej Ollamy lub osobno skonfigurowanego fallbacku. Bez modelu GUI nadal można otworzyć.
+
+**Dokumentacja:** [Codespaces](deploy/control-center/CODESPACES.md) · [Stan funkcji i API](deploy/control-center/FEATURE_STATUS.md) · [OpenAI/GitHub](deploy/control-center/OPENAI_GITHUB_INTEGRATION.md) · [Most agentów](deploy/control-center/AGENT_BRIDGE.md) · [MCP i root](deploy/control-center/MCP_ROOT_PLAN.md).
+
+Nie utożsamiaj obecności kodu z wdrożeniem: brak potwierdzonego uruchomienia Codespace, realnych agentów, pełnego wykonawcy root i połączenia ChatGPT przez MCP.
