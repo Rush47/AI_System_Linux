@@ -82,3 +82,16 @@ Implementation status: specification only; no real screen capture, WebRTC gatewa
 Run the agent processes as dedicated non-root service users with systemd sandboxing; grant privileged operations via a narrow, audited root-owned executor. Never grant unrestricted passwordless sudo or expose a root shell to untrusted model output.
 
 Integration of the four **original** AI agent runtimes is deferred until the user imports the application into Google AI Studio. Service scaffolding must not claim that any agent is connected or running before a real endpoint and host have been configured and verified.
+
+## System AI as the fifth autonomous daemon
+
+System AI is a first-class autonomous service alongside Aria, Alex, Astyria and Aurelius, not merely a UI chat channel.
+
+- Dedicated `ai-linux-system.service` supervised by systemd, boot startup, restart-on-failure, health checks and persistent task queue.
+- Orchestrates the worker fleet, diagnostic events, Spherical Vision 360 source state and cross-agent task routing.
+- Uses the configured primary Ollama 8B model with 4B emergency fallback when connected and available; never report a model as online without probing it.
+- Can request privileged Ubuntu operations through the same authenticated, audited host executor and policy gates as other agents; no permanent unrestricted root process or passwordless model shell.
+- Executes preapproved routine tasks autonomously while offline from the browser, with visible logs, pause/stop control and escalation for destructive changes.
+- Preserve the user's integration order: build infrastructure first, attach original AI runtimes after the application is imported into Google AI Studio.
+
+Status: architecture specification only; service is not installed or verified.
