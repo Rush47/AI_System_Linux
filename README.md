@@ -108,10 +108,10 @@ i kontrolowane.
 > **Uwaga:** to odrębny panel od LibreChat na porcie 3080. Poniższe funkcje znajdują się na gałęzi `feature/ubuntu-ai-linux-control-center`, niekoniecznie na `main`.
 
 1. W GitHub wybierz gałąź `feature/ubuntu-ai-linux-control-center` i otwórz **Code → Codespaces → Create codespace**.
-2. Poczekaj na automatyczny start usług; Control Center pozostaje prywatny na **3081**, a uwierzytelniony gateway OAuth MCP działa publicznie na **3082**.
+2. Poczekaj na automatyczny start usług; Control Center pozostaje prywatny na **3081**, a publiczny MCP ChatGPT działa bez logowania na **3082** i udostępnia wyłącznie narzędzia odczytowe.
 3. Jeżeli nie działa, uruchom `bash .devcontainer/start-control-center.sh` i sprawdź `curl -fsS http://127.0.0.1:3081/health`.
 4. Czat AI wymaga osiągalnej Ollamy lub osobno skonfigurowanego fallbacku. Bez modelu GUI nadal można otworzyć.
 
 **Dokumentacja:** [Codespaces](deploy/control-center/CODESPACES.md) · [Stan funkcji i API](deploy/control-center/FEATURE_STATUS.md) · [OpenAI/GitHub](deploy/control-center/OPENAI_GITHUB_INTEGRATION.md) · [Most agentów](deploy/control-center/AGENT_BRIDGE.md) · [MCP i root](deploy/control-center/MCP_ROOT_PLAN.md).
 
-Status połączeń, OAuth MCP i ograniczenia agentów: [FEATURE_STATUS.md](deploy/control-center/FEATURE_STATUS.md) oraz [CODESPACES.md](deploy/control-center/CODESPACES.md). Brak endpointów oryginalnych agentów nie oznacza ich uruchomienia.
+Status połączeń, anonimowy MCP tylko do odczytu i ograniczenia agentów: [FEATURE_STATUS.md](deploy/control-center/FEATURE_STATUS.md) oraz [CODESPACES.md](deploy/control-center/CODESPACES.md). Brak endpointów oryginalnych agentów nie oznacza ich uruchomienia.

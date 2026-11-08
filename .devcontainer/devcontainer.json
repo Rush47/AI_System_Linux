@@ -13,7 +13,7 @@
       "visibility": "private"
     },
     "3082": {
-      "label": "AI Linux ChatGPT MCP (OAuth)",
+      "label": "AI Linux ChatGPT MCP (no auth, read-only)",
       "onAutoForward": "notify",
       "visibility": "public"
     }

@@ -23,6 +23,7 @@ load_mcp_token() {
 }
 load_mcp_token MCP_AUTH_TOKEN .mcp-auth-token
 load_mcp_token MCP_TERMINAL_TOKEN .mcp-terminal-token
+export MCP_ANONYMOUS_READONLY="${MCP_ANONYMOUS_READONLY:-true}"
 if [[ -z "${MCP_PUBLIC_BASE_URL:-}" ]]; then
   if [[ -n "${CODESPACE_NAME:-}" ]]; then
     export MCP_PUBLIC_BASE_URL="https://${CODESPACE_NAME}-3082.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
@@ -68,4 +69,4 @@ else
   fi
 fi
 echo "Control Center: http://127.0.0.1:3081"
-echo "OAuth MCP: $MCP_PUBLIC_BASE_URL/mcp"
+echo "Anonymous read-only MCP: $MCP_PUBLIC_BASE_URL/mcp"

@@ -14,6 +14,16 @@ const resource = publicBase + '/mcp';
 const internalMcpUrl = process.env.MCP_INTERNAL_URL || 'http://127.0.0.1:3081/mcp';
 const operatorToken = process.env.MCP_AUTH_TOKEN || '';
 const terminalToken = process.env.MCP_TERMINAL_TOKEN || '';
+const anonymousReadOnly = process.env.MCP_ANONYMOUS_READONLY === 'true';
+const anonymousTools = new Set(['system_status', 'list_agents', 'get_task_status', 'get_logs']);
+const oauthPaths = new Set([
+  '/.well-known/oauth-protected-resource',
+  '/.well-known/oauth-protected-resource/mcp',
+  '/.well-known/oauth-authorization-server',
+  '/register',
+  '/authorize',
+  '/token',
+]);
 if (!operatorToken || !terminalToken || operatorToken === terminalToken) {
   throw new Error('Distinct MCP_AUTH_TOKEN and MCP_TERMINAL_TOKEN are required');
 }
@@ -152,6 +162,7 @@ const server = http.createServer(async (req, res) => {
   const ip = req.socket.remoteAddress || 'unknown';
 
   if (req.method === 'GET' && url.pathname === '/health') { json(res, 200, { ok: true, issuer: publicBase }); return; }
+  if (anonymousReadOnly && oauthPaths.has(url.pathname)) { res.writeHead(404); res.end(); return; }
   if (req.method === 'GET' && (url.pathname === '/.well-known/oauth-protected-resource' || url.pathname === '/.well-known/oauth-protected-resource/mcp')) {
     json(res, 200, { resource, authorization_servers: [publicBase], bearer_methods_supported: ['header'], scopes_supported: [...scopes] }); return;
   }
@@ -221,6 +232,32 @@ const server = http.createServer(async (req, res) => {
     sendOAuthError(res,400,'unsupported_grant_type','Only authorization_code and refresh_token are supported.');return;
   }
   if (url.pathname === '/mcp' && ['GET','POST','DELETE'].includes(req.method)) {
+    if (anonymousReadOnly) {
+      if (req.method !== 'POST') {
+        await relayMcp(req, res, { scope: 'mcp:operator' }, null);
+        return;
+      }
+      let body;try{body=await readJson(req)}catch{json(res,400,{error:'invalid_request'});return}
+      const method = body.method;
+      if (!['initialize', 'notifications/initialized', 'ping', 'tools/list', 'tools/call'].includes(method)) {
+        json(res,200,{jsonrpc:'2.0',id:body.id,error:{code:-32601,message:'Method not available'}});return;
+      }
+      if (method === 'tools/call' && !anonymousTools.has(body.params?.name)) {
+        json(res,200,{jsonrpc:'2.0',id:body.id,error:{code:-32601,message:'Tool not available'}});return;
+      }
+      if (method === 'tools/list') {
+        const response = await internalMcp(body, operatorToken);
+        if (response.status < 200 || response.status >= 300 || !response.value?.result?.tools) {
+          serveMcp(res, response.status || 502, response.value || { error: 'MCP tools/list failed' });
+          return;
+        }
+        response.value.result.tools = response.value.result.tools.filter(tool => anonymousTools.has(tool.name));
+        serveMcp(res, response.status, response.value);
+        return;
+      }
+      await relayMcp(req, res, { scope: 'mcp:operator' }, body);
+      return;
+    }
     const metadata=publicBase+'/.well-known/oauth-protected-resource/mcp';
     const bearer=(req.headers.authorization||'').startsWith('Bearer ')?req.headers.authorization.slice(7):'';
     const session=accessTokens.get(bearer);
