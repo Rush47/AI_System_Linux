@@ -77,7 +77,8 @@ function createMcpServer() {
     if (path.isAbsolute(relative) || relative.split(/[\\/]/).includes('..')) throw new Error('Invalid relative path');
     const target = path.resolve(workspace, relative);
     if (target !== workspace && !target.startsWith(workspace + path.sep)) throw new Error('Path outside workspace');
-    const parent = fs.realpathSync(path.dirname(target));
+    const parent = target === workspace ? workspace : fs.realpathSync(path.dirname(target));
+    if (fs.existsSync(target) && fs.lstatSync(target).isSymbolicLink()) throw new Error('Symlink targets are not allowed');
     if (parent !== workspace && !parent.startsWith(workspace + path.sep)) throw new Error('Symlink escape rejected');
     return target;
   };
