@@ -17,22 +17,22 @@ for(const id of ['agentSummary','agentDetails']){const host=document.getElementB
 const messages=document.getElementById('messages');
 const conversation=[];
 function escapeHTML(v){return v.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function inline(text){return escapeHTML(text).replace(/\x60([^\x60]+)\x60/g,'<code>$1</code>').replace(/\\*\\*([^*]+)\\*\\*/g,'<strong>$1</strong>').replace(/\\*([^*]+)\\*/g,'<em>$1</em>').replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)/g,(_,label,url)=>'<a href="'+url+'" target="_blank" rel="noopener noreferrer">'+label+'</a>')}
+function inline(text){return escapeHTML(text).replace(/\x60([^\x60]+)\x60/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,(_,label,url)=>'<a href="'+url+'" target="_blank" rel="noopener noreferrer">'+label+'</a>')}
 function markdown(raw){
- const lines=raw.split(/\\r?\\n/),out=[];let code=[],lang='',inCode=false,table=[];
+ const lines=raw.split(/\r?\n/),out=[];let code=[],lang='',inCode=false,table=[];
  function flushTable(){if(!table.length)return;out.push('<table>'+table.map((cells,i)=>'<tr>'+cells.map(c=>'<'+(i===0?'th':'td')+'>'+inline(c.trim())+'</'+(i===0?'th':'td')+'>').join('')+'</tr>').join('')+'</table>');table=[]}
  for(const line of lines){
-  const fence=line.match(/^\x60\x60\x60([\\w+-]*)/);
-  if(fence){flushTable();if(inCode){out.push('<details open><summary>Kod '+escapeHTML(lang)+' — rozwiń/zwiń</summary><pre><code>'+escapeHTML(code.join('\\n'))+'</code></pre></details>');code=[];inCode=false}else{inCode=true;lang=fence[1]}continue}
+  const fence=line.match(/^\x60\x60\x60([\w+-]*)/);
+  if(fence){flushTable();if(inCode){out.push('<details open><summary>Kod '+escapeHTML(lang)+' — rozwiń/zwiń</summary><pre><code>'+escapeHTML(code.join('\n'))+'</code></pre></details>');code=[];inCode=false}else{inCode=true;lang=fence[1]}continue}
   if(inCode){code.push(line);continue}
-  if(/^\\|.*\\|$/.test(line)){if(/^\\|[\\s|:-]+\\|$/.test(line))continue;table.push(line.slice(1,-1).split('|'));continue}flushTable();
+  if(/^\|.*\|$/.test(line)){if(/^\|[\s|:-]+\|$/.test(line))continue;table.push(line.slice(1,-1).split('|'));continue}flushTable();
   if(/^#{1,3} /.test(line)){const n=line.match(/^#+/)[0].length;out.push('<h'+n+'>'+inline(line.slice(n+1))+'</h'+n+'>')}
   else if(/^> /.test(line))out.push('<blockquote>'+inline(line.slice(2))+'</blockquote>');
   else if(/^[-*] /.test(line))out.push('<p>• '+inline(line.slice(2))+'</p>');
-  else if(/^\\d+\\. /.test(line))out.push('<p>'+inline(line)+'</p>');
+  else if(/^\d+\. /.test(line))out.push('<p>'+inline(line)+'</p>');
   else if(line.trim())out.push('<p>'+inline(line)+'</p>');
  }
- flushTable();if(inCode)out.push('<pre><code>'+escapeHTML(code.join('\\n'))+'</code></pre>');return out.join('');
+ flushTable();if(inCode)out.push('<pre><code>'+escapeHTML(code.join('\n'))+'</code></pre>');return out.join('');
 }
 function addMessage(who,content,type='assistant'){
  const wrap=document.createElement('article');wrap.className='bubble '+type;
