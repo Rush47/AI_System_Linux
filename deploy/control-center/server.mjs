@@ -1,5 +1,6 @@
 import {appendFile,readFile as readStored} from 'node:fs/promises';
 import http from 'node:http';
+import {fleetList,fleetWrite} from './fleet.mjs';
 import {readFile} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -39,6 +40,17 @@ syncHeartbeat.unref();
 const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
+  if(req.method==='GET'&&req.url==='/api/fleet'){
+    try{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await fleetList()))}catch(e){res.writeHead(503);res.end(JSON.stringify({error:e.message}))}return;
+  }
+  if(req.method==='POST'&&req.url==='/api/fleet'){
+    const token=process.env.FLEET_WRITE_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401);res.end(JSON.stringify({error:'Wymagany FLEET_WRITE_TOKEN'}));return}
+    try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>8192)throw Error('Za duże żądanie')}
+      const {action,payload}=JSON.parse(raw);const item=await fleetWrite(action,payload||{});
+      res.writeHead(201,{'Content-Type':'application/json'});res.end(JSON.stringify({item}));syncBroadcast('fleet-updated',{action,id:item.id});
+    }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
   if(req.method==='GET'&&req.url?.startsWith('/api/agents/messages')){
     const url=new URL(req.url,'http://localhost');const after=Number(url.searchParams.get('after')||0);
     res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({messages:inbox.filter(m=>m.id>after).slice(-100)}));return;
