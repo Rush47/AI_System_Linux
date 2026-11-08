@@ -107,13 +107,37 @@ const server=http.createServer(async(req,res)=>{
       if(typeof data.message?.content!=='string'||!data.message.content.trim())throw Error('Brak odpowiedzi modelu');
       return data.message.content;
     }
-    let text,usedModel=activeModel,fallback=false;
-    try{text=await ask(activeModel)}catch(primaryError){
-      if(fallbackModel===activeModel)throw primaryError;
-      try{text=await ask(fallbackModel);usedModel=fallbackModel;fallback=true}
-      catch(fallbackError){throw Error('Wybrany model i model awaryjny niedostępne: '+primaryError.message+'; '+fallbackError.message)}
+    // Optional third-tier Gemini fallback; API key is never exposed to the browser.
+    async function askGemini(){
+      const key=process.env.GEMINI_API_KEY;
+      if(!key)throw Error('GEMINI_API_KEY not configured');
+      const geminiModel=process.env.GEMINI_FALLBACK_MODEL||'gemini-3.1-flash-lite-preview';
+      if(!/^[a-zA-Z0-9._-]+$/.test(geminiModel))throw Error('Invalid Gemini model name');
+      const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(geminiModel)+':generateContent';
+      const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify({systemInstruction:{parts:[{text:prompt}]},contents:[{role:'user',parts:[{text:message}]}],generationConfig:{maxOutputTokens:1024}}),signal:AbortSignal.timeout(45000)});
+      if(!response.ok)throw Error('Gemini HTTP '+response.status);
+      const data=await response.json();
+      const answer=(data.candidates?.[0]?.content?.parts||[]).map(part=>part.text||'').join('');
+      if(!answer.trim())throw Error('Gemini returned an empty response');
+      return {answer,geminiModel};
     }
-    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({text,model:usedModel,fallback}));syncBroadcast('chat-completed',{model:usedModel,fallback});
+    let text,usedModel=activeModel,fallback=false,provider='ollama';
+    const failures=[];
+    try{text=await ask(activeModel)}catch(primaryError){
+      failures.push('Primary Ollama: '+primaryError.message);
+      if(fallbackModel!==activeModel){
+        try{text=await ask(fallbackModel);usedModel=fallbackModel;fallback=true}
+        catch(fallbackError){failures.push('Fallback Ollama: '+fallbackError.message)}
+      }
+      if(text===undefined){
+        if(process.env.GEMINI_FALLBACK_ENABLED==='true'&&process.env.GEMINI_API_KEY){
+          try{const result=await askGemini();text=result.answer;usedModel=result.geminiModel;provider='gemini';fallback=true}
+          catch(geminiError){failures.push('Gemini: '+geminiError.message)}
+        }else failures.push('Gemini fallback disabled or key missing');
+        if(text===undefined)throw Error('Brak dostępnego modelu: '+failures.join('; '));
+      }
+    }
+    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({text,model:usedModel,fallback,provider}));syncBroadcast('chat-completed',{model:usedModel,fallback,provider});
   }catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}
 });
 server.listen(3081,'0.0.0.0');
