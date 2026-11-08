@@ -1,0 +1,9 @@
+# Uruchom z głównym docker-compose.yml; port lokalny, bez publicznego wystawiania.
+services:
+  control-center:
+    build:
+      context: ./deploy/control-center
+    image: ai-linux-control-center:0.1.0
+    restart: unless-stopped
+    ports:
+      - "${CONTROL_CENTER_BIND_IP:-127.0.0.1}:${CONTROL_CENTER_PORT:-3081}:80"
