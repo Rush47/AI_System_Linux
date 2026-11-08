@@ -87,7 +87,15 @@ document.getElementById("nlpTerminalForm").addEventListener("submit",async e=>{
 document.getElementById("nlpCopy").onclick=()=>{if(nlpLastCommand)navigator.clipboard.writeText(nlpLastCommand)};
 document.getElementById("nlpClear").onclick=()=>{nlpLastCommand="";document.getElementById("nlpTerminalOutput").textContent="Terminal wyczyszczony. Root hosta: NIEPODŁĄCZONY"};
 
+const seenAgentMessages=new Set();
+function receiveAgentMessage(m){
+ if(!m||seenAgentMessages.has(m.id))return;
+ seenAgentMessages.add(m.id);
+ if(m.channel===channel||channel==='Wszyscy'){conversation.push({who:m.agent,content:m.text});addMessage(m.agent+' · '+m.channel,m.text,'assistant')}
+}
+async function loadAgentInbox(){try{const r=await fetch('/api/agents/messages',{cache:'no-store'});if(!r.ok)return;const d=await r.json();for(const m of d.messages||[])receiveAgentMessage(m)}catch(e){console.warn('Agent inbox:',e)}}
+loadAgentInbox();
 const syncStream=new EventSource('/api/sync/events');
-syncStream.onmessage=e=>{try{const event=JSON.parse(e.data);if(event.type==='diagnostics-updated'&&document.getElementById('diagnostics')?.classList.contains('active'))refreshDiagnostics();}catch(err){console.warn('Sync event',err)}};
+syncStream.onmessage=e=>{try{const event=JSON.parse(e.data);if(event.type==='agent-message')receiveAgentMessage(event.details);if(event.type==='diagnostics-updated'&&document.getElementById('diagnostics')?.classList.contains('active'))refreshDiagnostics();}catch(err){console.warn('Sync event',err)}};
 syncStream.onerror=()=>console.warn('Global sync: reconnecting');
 </script></body></html>
