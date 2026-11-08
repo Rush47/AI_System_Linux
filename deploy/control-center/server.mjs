@@ -1,9 +1,26 @@
 import http from 'node:http';
 import {readFile} from 'node:fs/promises';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+const exec=promisify(execFile);
 const page=await readFile(new URL('./index.html',import.meta.url));
 const model=process.env.SYSTEM_AI_MODEL||'thox-ai/thoxopen-8b-heretic:q4_k_m';
 const endpoint=process.env.OLLAMA_URL||'http://ollama:11434';
 const prompt='Jesteś System AI, lokalnym asystentem systemu AI Linux na Ubuntu. Działasz przez model Ollama 8B. Wyjaśniaj, diagnozuj i proponuj kroki. Nie twierdź, że wykonałeś polecenia, zmieniłeś pliki lub odczytałeś stan hosta, jeśli nie masz takich narzędzi. Nie podszywaj się pod Aria, Alex, Astyria ani Aurelius.';
+// Strictly read-only diagnostics from the control-center container; never shell-evaluate model output.
+const diagnostics=Object.freeze({
+  '/status':['uname',['-a']],
+  '/procesy':['ps',['-eo','pid,comm,%cpu,%mem','--sort=-%cpu']],
+  '/dysk':['df',['-h']],
+  '/pamiec':['free',['-h']],
+  '/pamięć':['free',['-h']]
+});
+async function runDiagnostic(message){
+  const command=diagnostics[message.trim().toLowerCase()];
+  if(!command)return null;
+  const {stdout}=await exec(command[0],command[1],{timeout:5000,maxBuffer:32768,env:{PATH:'/usr/bin:/bin'}});
+  return 'Diagnostyka kontenera Control Center (nie hosta Ubuntu):\\n'+stdout.slice(0,12000);
+}
 const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
@@ -14,6 +31,8 @@ const server=http.createServer(async(req,res)=>{
     for await(const chunk of req){input+=chunk;if(input.length>16384)throw Error('Za długa wiadomość')}
     const message=JSON.parse(input).message;
     if(typeof message!=='string'||!message.trim()||message.length>8000)throw Error('Nieprawidłowa wiadomość');
+    const diagnostic=await runDiagnostic(message);
+    if(diagnostic!==null){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({text:diagnostic}));return}
     const response=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model,stream:false,messages:[{role:'system',content:prompt},{role:'user',content:message}],options:{num_predict:1024}}),signal:AbortSignal.timeout(120000)});
     if(!response.ok)throw Error('Ollama HTTP '+response.status);
     const data=await response.json();const text=data.message?.content;
