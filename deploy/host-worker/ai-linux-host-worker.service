@@ -1,0 +1,26 @@
+[Unit]
+Description=AI Linux host worker (read-only task queue)
+After=network.target
+
+[Service]
+Type=simple
+User=ai-linux
+Group=ai-linux
+EnvironmentFile=/etc/ai-linux/worker.env
+Environment=AI_LINUX_DB=/var/lib/ai-linux/worker.sqlite3
+ExecStart=/usr/bin/python3 /opt/ai-linux/host-worker.py
+Restart=always
+RestartSec=3
+StateDirectory=ai-linux
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+ReadWritePaths=/var/lib/ai-linux
+
+[Install]
+WantedBy=multi-user.target
