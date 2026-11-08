@@ -77,7 +77,16 @@ document.getElementById('compose').addEventListener('submit',async e=>{
  const selected=channel;promptField.replaceChildren();conversation.push({who:'Ty',content:input});addMessage('Ty',input,'user');
  const answer=addMessage(selected,'Oczekiwanie na odpowiedź…');
  let text,who=selected;
- if(selected==='System'&&input.toLowerCase().startsWith('/aplikacja ')){
+ if(/@(?:aria|alex|astyria|aurelius)\b/i.test(input)){
+  who='Zadania agentów';
+  try{
+   const token=window.prompt('Token do zlecania zadań agentom (AGENT_DISPATCH_TOKEN):');
+   if(!token)throw Error('Anulowano: brak tokena');
+   const response=await fetch('/api/agents/mentions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({text:input})});
+   const data=await response.json();if(!response.ok)throw Error(data.error||'Błąd kolejki');
+   text='Zapisano zadanie dla: '+data.mentions.map(x=>'@'+x).join(', ')+'. Status: oczekuje w kolejce, NIE wysłano jeszcze do oryginalnych agentów. ID: '+data.id;
+  }catch(err){text='Nie zlecono zadania: '+err.message}
+ }else if(selected==='System'&&input.toLowerCase().startsWith('/aplikacja ')){
   text=await window.createFleetAppFromChat(input);
   if(text===null)text='Składnia: /aplikacja ID_STATKU | Nazwa | Opis';
  }else if(selected==='System'&&input.toLowerCase().startsWith('/projekt ')){
