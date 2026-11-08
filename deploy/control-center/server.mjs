@@ -1,3 +1,4 @@
+import {appendFile,readFile as readStored} from 'node:fs/promises';
 import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
@@ -22,6 +23,10 @@ async function runDiagnostic(message){
   const {stdout}=await exec(command[0],command[1],{timeout:5000,maxBuffer:32768,env:{PATH:'/usr/bin:/bin'}});
   return 'Diagnostyka kontenera Control Center (nie hosta Ubuntu):\\n'+stdout.slice(0,12000);
 }
+const agentNames=new Set(['Aria','Alex','Astyria','Aurelius']);
+const inboxPath=process.env.AGENT_INBOX_PATH||'/tmp/ai-linux-agent-inbox.jsonl';
+let inbox=[];
+try{inbox=(await readStored(inboxPath,'utf8')).split('\\n').filter(Boolean).slice(-500).map(line=>JSON.parse(line))}catch(e){if(e.code!=='ENOENT')console.error('Agent inbox unavailable:',e.message)}
 const syncClients=new Set();let syncRevision=0;
 function syncBroadcast(type,details={}) {
  const event=JSON.stringify({revision:++syncRevision,type,details,timestamp:new Date().toISOString()});
@@ -32,6 +37,24 @@ syncHeartbeat.unref();
 const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
+  if(req.method==='GET'&&req.url?.startsWith('/api/agents/messages')){
+    const url=new URL(req.url,'http://localhost');const after=Number(url.searchParams.get('after')||0);
+    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({messages:inbox.filter(m=>m.id>after).slice(-100)}));return;
+  }
+  if(req.method==='POST'&&req.url==='/api/agents/messages'){
+    const token=process.env.AGENT_INGEST_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401);res.end('Unauthorized');return}
+    try{
+      let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>12000)throw Error('Too large')}
+      const payload=JSON.parse(raw);
+      if(!agentNames.has(payload.agent)||typeof payload.text!=='string'||!payload.text.trim()||payload.text.length>8000||!['Wszyscy',payload.agent].includes(payload.channel||payload.agent))throw Error('Invalid agent message');
+      const message={id:Date.now()*1000+Math.floor(Math.random()*1000),agent:payload.agent,channel:payload.channel||payload.agent,text:payload.text,timestamp:new Date().toISOString()};
+      await appendFile(inboxPath,JSON.stringify(message)+'\\n',{mode:0o600});
+      inbox.push(message);if(inbox.length>500)inbox=inbox.slice(-500);
+      syncBroadcast('agent-message',message);
+      res.writeHead(201,{'Content-Type':'application/json'});res.end(JSON.stringify({accepted:true,id:message.id}));
+    }catch(e){res.writeHead(400);res.end(JSON.stringify({error:e.message}))}return;
+  }
   if(req.method==='GET'&&req.url==='/api/sync/events'){
     res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});
     syncClients.add(res);res.write('retry: 2000\\ndata: '+JSON.stringify({revision:syncRevision,type:'connected',timestamp:new Date().toISOString()})+'\\n\\n');
