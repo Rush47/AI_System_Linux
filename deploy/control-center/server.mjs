@@ -228,7 +228,13 @@ const server=http.createServer(async(req,res)=>{
       let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>12000)throw Error('Too large')}
       const payload=JSON.parse(raw);
       if(!agentNames.has(payload.agent)||typeof payload.text!=='string'||!payload.text.trim()||payload.text.length>8000||!['Wszyscy',payload.agent].includes(payload.channel||payload.agent))throw Error('Invalid agent message');
-      const message={id:Date.now()*1000+Math.floor(Math.random()*1000),agent:payload.agent,channel:payload.channel||payload.agent,text:payload.text,timestamp:new Date().toISOString()};
+      const taskId=typeof payload.taskId==='string'?payload.taskId:null;
+      if(taskId){
+       const task=outgoingTasks.get(taskId);
+       if(!task||!task.mentions.includes(payload.agent.toLowerCase()))throw Error('Unknown task or agent');
+      }
+      const message={id:Date.now()*1000+Math.floor(Math.random()*1000),agent:payload.agent,channel:payload.channel||payload.agent,text:payload.text,taskId,timestamp:new Date().toISOString()};
+      if(taskId){const task=outgoingTasks.get(taskId);outgoingTasks.set(taskId,{...task,status:'result-received',lastResultAt:message.timestamp});syncBroadcast('agent-task-result',{taskId,agent:payload.agent})}
       await appendFile(inboxPath,JSON.stringify(message)+'\\n',{mode:0o600});
       inbox.push(message);if(inbox.length>500)inbox=inbox.slice(-500);
       syncBroadcast('agent-message',message);
