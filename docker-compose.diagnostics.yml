@@ -1,0 +1,44 @@
+# AI Linux diagnostics — optional stack, localhost only.
+# Start: docker compose -f docker-compose.diagnostics.yml up -d
+services:
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6006:6006"
+    volumes:
+      - phoenix-data:/mnt/data
+    environment:
+      - PHOENIX_WORKING_DIR=/mnt/data
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml","--storage.tsdb.path=/prometheus"]
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./deploy/diagnostics/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    command: ["--path.rootfs=/host"]
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    expose:
+      - "9100"
+  grafana:
+    image: grafana/grafana-oss:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/diagnostics/grafana-datasources.yml:/etc/grafana/provisioning/datasources/ai-linux.yml:ro
+volumes:
+  phoenix-data:
+  prometheus-data:
+  grafana-data:
