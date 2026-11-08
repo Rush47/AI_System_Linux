@@ -41,6 +41,19 @@ export function fleetWrite(action,payload){
    if(!['nieznany','sojuszniczy','potencjalnie wrogi'].includes(payload.classification))throw Error('Nieprawidłowa klasyfikacja');
    if(!validText(payload.reason,500))throw Error('Wymagane uzasadnienie klasyfikacji');
    item.classification=payload.classification;item.classificationReason=payload.reason.trim();item.classifiedAt=now;
+  }else if(action==='transmission.queue'){
+   if(!['ship','contact'].includes(payload.targetType)||!validText(payload.message,4000))throw Error('Nieprawidłowa transmisja');
+   const target=payload.targetType==='ship'?data.ships.find(x=>x.id===payload.targetId):(data.contacts||[]).find(x=>x.id===payload.targetId);
+   if(!target)throw Error('Adresat nie istnieje');
+   data.transmissions??=[];
+   item={id:randomUUID(),targetType:payload.targetType,targetId:payload.targetId,message:payload.message.trim(),status:'oczekuje na kanał',createdAt:now,updatedAt:now};
+   data.transmissions.push(item);
+  }else if(action==='transmission.ack'){
+   item=(data.transmissions||[]).find(x=>x.id===payload.id&&x.targetType==='ship'&&x.targetId===payload.shipId);
+   if(!item)throw Error('Transmisja nie istnieje lub nie należy do statku');
+   if(!['odebrano','odrzucono'].includes(payload.status))throw Error('Nieprawidłowy status potwierdzenia');
+   if(item.status!=='oczekuje na kanał')throw Error('Transmisja już rozliczona');
+   item.status=payload.status;item.updatedAt=now;item.acknowledgedAt=now;
   }else if(action==='mission.update'){
    item=data.missions.find(m=>m.id===payload.id);if(!item)throw Error('Nie znaleziono misji');
    if(!['planowana','w przygotowaniu','wstrzymana','zakończona'].includes(payload.status))throw Error('Nieprawidłowy status');
