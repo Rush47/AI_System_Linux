@@ -46,3 +46,18 @@ The server checks that taskId exists in the active process and matches the named
 - Chat currently prompts for dispatch token; production should use authenticated server-side sessions, not manual token entry.
 - HTTP acceptance is not task completion. A result callback is necessary.
 - Google AI Studio hosts the frontend/editor, not a permanent worker. Keep this bridge on the actual backend.
+
+## Verified discovery in AI Linux Codespaces — 2026-11-08
+- The local workspace and the searched public source repositories do not contain `svl_agent_bridge.py`.
+- `mmitek515-netizen/bastilla_1_2` returned GitHub 404. Available public repositories included `SVL_System`, `Bastilla_OS_2`, `Bastilla_OS_Ollama`, and `Debian_13`.
+- `SVL_System` contains original `.github/agents/*.agent.md` profiles and an MCP bridge. Its source explicitly reports `liveWorkersVerified: false`; profiles are not running workers.
+- `Bastilla_OS_2` contains `integrations/mcp/remote_server.py`. Its task writes are disabled unless `BASTILLA_REMOTE_MCP_WRITES=1` and `BASTILLA_REMOTE_API_TOKEN` are supplied. Its own deployment notes say the task route schema is unverified and the Cloud Run bridge is not deployed. Read-only GET checks of the documented host and status paths returned HTTP 404 in this Codespace.
+- `Debian_13/debian13/system/AGENT_RUNTIME.md` explicitly says the four profiles are not background workers. Its original-agent registry reports execution unverified unless a real worker is independently verified.
+- The running AI Linux backend reports `aria`, `alex`, `astyria`, and `aurelius` as unconfigured/offline. `ARIA_TASK_URL`, `ALEX_TASK_URL`, `ASTYRIA_TASK_URL`, `AURELIUS_TASK_URL`, `AGENT_DISPATCH_TOKEN`, `AGENT_OUTBOUND_TOKEN`, and `AGENT_INGEST_TOKEN` are absent from this Codespace. No agent task was sent.
+- GitHub CLI authenticated as `Rush47` could read the public source repositories. Reading repository Actions secret names was denied (HTTP 403); the user-level Codespaces secret list returned no entries. Secret values were never requested or read.
+
+### Requirements to establish a real connection
+1. Provide the verified HTTPS task endpoint for each original agent, or deploy and independently verify the Bastilla remote API plus its exact request/response contract.
+2. Set `AGENT_DISPATCH_TOKEN`, `AGENT_OUTBOUND_TOKEN`, and `AGENT_INGEST_TOKEN` in Codespaces secrets. Configure the four `*_TASK_URL` values only after their routes are confirmed.
+3. If using the Bastilla MCP bridge, separately configure `BASTILLA_REMOTE_API_URL`, `BASTILLA_REMOTE_API_TOKEN`, and enable `BASTILLA_REMOTE_MCP_WRITES=1` only after the remote endpoint and write semantics are verified.
+4. Perform a non-destructive task per agent and wait for an authenticated callback containing the matching `taskId`. HTTP 2xx acceptance alone is not proof that an original agent executed the task.
