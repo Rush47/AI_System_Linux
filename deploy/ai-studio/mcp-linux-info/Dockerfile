@@ -15,10 +15,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev \
+RUN npm install --omit=dev --package-lock=false \
     && npm cache clean --force \
     && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin mcp
 
+RUN mkdir -p /workspace && chown 10001:10001 /workspace
 COPY --chown=10001:10001 server.js ./
 
 USER 10001:10001

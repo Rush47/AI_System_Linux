@@ -76,6 +76,16 @@ services:
       - app_internal
 
   ubuntu-system-info:
+    environment:
+      MCP_WORKSPACE: /workspace
+      MCP_WRITE_TOKEN: ${MCP_WRITE_TOKEN:-}
+      AGENT_ARIA_URL: ${AGENT_ARIA_URL:-}
+      AGENT_ALEX_URL: ${AGENT_ALEX_URL:-}
+      AGENT_ASTYRIA_URL: ${AGENT_ASTYRIA_URL:-}
+      AGENT_AURELIUS_URL: ${AGENT_AURELIUS_URL:-}
+      AGENT_BRIDGE_TOKEN: ${AGENT_BRIDGE_TOKEN:-}
+    volumes:
+      - mcp_workspace:/workspace
     build:
       context: ./deploy/ai-studio/mcp-linux-info
     image: ai-system-linux-ubuntu-mcp:1.0.0
@@ -140,3 +150,4 @@ volumes:
   mongodb_data:
   meilisearch_data:
   ollama_data:
+  mcp_workspace:

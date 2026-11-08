@@ -1,6 +1,9 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const http = require('node:http');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { z } = require('zod');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 
@@ -66,6 +69,64 @@ function createMcpServer() {
     },
     async () => ({ content: [{ type: 'text', text: rootFilesystem() }] }),
   );
+
+
+  // File access is intentionally limited to a dedicated persistent workspace.
+  const workspace = path.resolve(process.env.MCP_WORKSPACE || '/workspace');
+  const resolveFile = (relative) => {
+    if (path.isAbsolute(relative) || relative.split(/[\\/]/).includes('..')) throw new Error('Invalid relative path');
+    const target = path.resolve(workspace, relative);
+    if (target !== workspace && !target.startsWith(workspace + path.sep)) throw new Error('Path outside workspace');
+    const parent = target === workspace ? workspace : fs.realpathSync(path.dirname(target));
+    if (fs.existsSync(target) && fs.lstatSync(target).isSymbolicLink()) throw new Error('Symlink targets are not allowed');
+    if (parent !== workspace && !parent.startsWith(workspace + path.sep)) throw new Error('Symlink escape rejected');
+    return target;
+  };
+  const result = (data) => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
+  server.registerTool('workspace_list', {
+    description: 'List files in the dedicated MCP workspace',
+    inputSchema: { directory: z.string().default('.') },
+  }, async ({ directory }) => {
+    const target = resolveFile(path.join(directory, '.'));
+    return result(fs.readdirSync(target, { withFileTypes: true }).map(e => ({ name: e.name, type: e.isDirectory() ? 'directory' : 'file' })));
+  });
+  server.registerTool('workspace_read', {
+    description: 'Read a UTF-8 file in the dedicated workspace (up to 256 KiB)',
+    inputSchema: { file: z.string().min(1) },
+  }, async ({ file }) => {
+    const target = resolveFile(file);
+    if (!fs.statSync(target).isFile() || fs.statSync(target).size > 262144) throw new Error('Not a readable small file');
+    return result({ file, content: fs.readFileSync(target, 'utf8') });
+  });
+  server.registerTool('workspace_write', {
+    description: 'Create or replace a workspace text file. Requires configured MCP_WRITE_TOKEN on the server.',
+    inputSchema: { file: z.string().min(1), content: z.string().max(262144), write_token: z.string().min(1) },
+  }, async ({ file, content, write_token }) => {
+    const expected = process.env.MCP_WRITE_TOKEN;
+    if (!expected || !crypto.timingSafeEqual(Buffer.from(crypto.createHash('sha256').update(write_token).digest()), Buffer.from(crypto.createHash('sha256').update(expected).digest()))) throw new Error('Write authorization failed');
+    const target = resolveFile(file);
+    if (fs.existsSync(target) && !fs.statSync(target).isFile()) throw new Error('Not a regular file');
+    fs.writeFileSync(target, content, { encoding: 'utf8', flag: 'w', mode: 0o600 });
+    return result({ saved: true, file, bytes: Buffer.byteLength(content) });
+  });
+  server.registerTool('list_agents', {
+    description: 'List configured original agent bridge URLs; does not claim agents are online',
+    inputSchema: {},
+  }, async () => result(['aria','alex','astyria','aurelius'].map(id => ({ id, configured: Boolean(process.env['AGENT_' + id.toUpperCase() + '_URL']), online: 'unverified' }))));
+  server.registerTool('agent_send_message', {
+    description: 'Forward a message to an explicitly configured original agent bridge; no synthetic agent fallback',
+    inputSchema: { agent_id: z.enum(['aria','alex','astyria','aurelius']), message: z.string().min(1).max(16000), write_token: z.string().min(1) },
+  }, async ({ agent_id, message, write_token }) => {
+    const expected = process.env.MCP_WRITE_TOKEN;
+    if (!expected || crypto.createHash('sha256').update(write_token).digest('hex') !== crypto.createHash('sha256').update(expected).digest('hex')) throw new Error('Authorization failed');
+    const endpoint = process.env['AGENT_' + agent_id.toUpperCase() + '_URL'];
+    if (!endpoint) return result({ agent_id, delivered: false, reason: 'Original agent bridge not configured' });
+    const url = new URL(endpoint);
+    if (url.protocol !== 'https:' && !(url.hostname === '127.0.0.1' || url.hostname === 'localhost')) throw new Error('HTTPS required for remote agent');
+    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...(process.env.AGENT_BRIDGE_TOKEN ? { authorization: 'Bearer ' + process.env.AGENT_BRIDGE_TOKEN } : {}) }, body: JSON.stringify({ agent_id, message }), signal: AbortSignal.timeout(10000), redirect: 'error' });
+    const body = (await response.text()).slice(0, 16000);
+    return result({ agent_id, accepted: response.ok, http_status: response.status, response: body, execution_confirmed: false });
+  });
 
   return server;
 }

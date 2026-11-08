@@ -1,0 +1,35 @@
+{
+  "name": "AI Linux — GUI + MCP",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [
+    3080,
+    8000,
+    5173
+  ],
+  "portsAttributes": {
+    "3080": {
+      "label": "LibreChat UI",
+      "onAutoForward": "notify"
+    },
+    "5173": {
+      "label": "AI Linux GUI (Vite)",
+      "onAutoForward": "openPreview"
+    },
+    "8000": {
+      "label": "MCP Ubuntu",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "npm --version && docker compose version",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}
