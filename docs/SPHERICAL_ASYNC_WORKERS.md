@@ -51,3 +51,19 @@ Status: design specification, not a deployed service.
 3. Policy-based administrative executor.
 4. Chat tool calls, interactive task cards and live logs.
 5. Real original-agent endpoint adapters and end-to-end Ubuntu tests.
+
+## Spherical Vision 360 — remote desktops and devices
+
+- Register each Ubuntu desktop, authorized remote desktop session, browser session, and mobile screen-share as a separate source with a unique device ID.
+- The source agent captures only an explicitly shared screen/window or authorized diagnostic stream; indicate capture state visibly and allow immediate revoke.
+- Each source gets a separate asynchronous vision worker and independent frame-rate, bandwidth, memory, CPU and retention budgets.
+- The orchestrator correlates timestamped observations and device health across sources without pretending to see unavailable cameras, hidden windows or disconnected devices.
+- Remote viewing and remote control are separate capabilities and permissions. Control is disabled by default and requires an authenticated user-granted session.
+- Support WebRTC for low-latency video, with authenticated signaling, encryption in transit, expiring session credentials and reconnect/backpressure logic.
+- Never expose remote desktop or privileged system-control endpoints directly to the public Internet; use authenticated gateway or VPN.
+- Keep a device inventory with connected/disconnected/permission-denied statuses derived from actual heartbeats, never simulated statuses.
+- Do not retain screen captures or use them for long-term AI memory without an explicit user setting and retention policy.
+- Mobile devices require platform-specific screen sharing permissions; no bypass of Android or OS privacy controls.
+- Proposed UI: Spherical Vision tab, source selector, live preview, per-device diagnostics, AI analysis request, stop sharing, and optional separately authorized remote control.
+
+Implementation status: specification only; no real screen capture, WebRTC gateway or device agents deployed yet.
