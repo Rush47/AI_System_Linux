@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 const port = Number(process.env.NLP_CLI_PORT || 8765);
 const ollama = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
@@ -6,6 +7,17 @@ const model = process.env.OLLAMA_MODEL || 'qwen3:8b';
 const token = process.env.NLP_CLI_TOKEN;
 if (!token) { console.error('Set NLP_CLI_TOKEN before starting'); process.exit(1); }
 const jobs = new Map();
+const autoExec = process.env.NLP_AUTO_EXEC === 'true';
+if (autoExec && process.getuid?.() === 0) { console.error('AUTO-EXEC must not run as root'); process.exit(1); }
+const runCommand = async command => {
+  const child=spawn('bash',['-lc',command],{cwd:process.env.CLI_WORKDIR||process.cwd(),env:{PATH:process.env.PATH,HOME:process.env.HOME,TERM:'dumb'},stdio:['ignore','pipe','pipe']});
+  let output='',truncated=false;
+  for(const stream of [child.stdout,child.stderr]) stream.on('data',b=>{if(output.length<60000) output+=b.toString().slice(0,60000-output.length); else truncated=true;});
+  const timer=setTimeout(()=>child.kill('SIGKILL'),30000);
+  const code=await new Promise(resolve=>child.on('close',resolve));
+  clearTimeout(timer);
+  return {exit_code:code,output,truncated,executed:true};
+};
 const reply = (res, code, data) => { res.writeHead(code, {'content-type':'application/json','cache-control':'no-store'}); res.end(JSON.stringify(data)); };
 const read = async req => { let s=''; for await (const c of req) { s += c; if(s.length>20000) throw Error('Request too large'); } return JSON.parse(s); };
 const generate = async instruction => {
@@ -24,9 +36,15 @@ const server=http.createServer(async(req,res)=>{
       const {instruction}=await read(req);
       if(typeof instruction!=='string'||!instruction.trim()||instruction.length>4000) return reply(res,400,{error:'Invalid instruction'});
       const plan=await generate(instruction);
-      const id=crypto.randomUUID();
+      const id=randomUUID();
       jobs.set(id,{...plan,created:Date.now()});
       setTimeout(()=>jobs.delete(id),300000).unref();
+      if (autoExec) {
+        const result=await runCommand(plan.command);
+        console.log(JSON.stringify({event:'auto_exec',id,command:plan.command,exit_code:result.exit_code,at:new Date().toISOString()}));
+        jobs.delete(id);
+        return reply(res,200,{id,...plan,requires_confirmation:false,...result});
+      }
       return reply(res,200,{id,...plan,requires_confirmation:true,executed:false});
     }
     if(req.method==='POST' && req.url==='/api/execute'){
@@ -34,13 +52,7 @@ const server=http.createServer(async(req,res)=>{
       const job=jobs.get(id);
       if(!job||Date.now()-job.created>300000||confirm!==true||command!==job.command) return reply(res,400,{error:'Explicit confirmation of exact command required'});
       jobs.delete(id);
-      const child=spawn('bash',['-lc',job.command],{cwd:process.env.CLI_WORKDIR||process.cwd(),env:{PATH:process.env.PATH,HOME:process.env.HOME,TERM:'dumb'},stdio:['ignore','pipe','pipe']});
-      let output='',truncated=false;
-      for(const stream of [child.stdout,child.stderr]) stream.on('data',b=>{if(output.length<60000) output+=b.toString().slice(0,60000-output.length); else truncated=true;});
-      const timer=setTimeout(()=>child.kill('SIGKILL'),30000);
-      const code=await new Promise(resolve=>child.on('close',resolve));
-      clearTimeout(timer);
-      return reply(res,200,{exit_code:code,output,truncated,executed:true});
+      return reply(res,200,await runCommand(job.command));
     }
     reply(res,404,{error:'Not found'});
   }catch(e){reply(res,500,{error:String(e.message||e)});}
