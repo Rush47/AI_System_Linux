@@ -1,9 +1,17 @@
-# Uruchom z głównym docker-compose.yml; port lokalny, bez publicznego wystawiania.
+# Uruchom z głównym docker-compose.yml, aby użyć istniejącej Ollamy.
 services:
   control-center:
     build:
       context: ./deploy/control-center
-    image: ai-linux-control-center:0.1.0
+    image: ai-linux-control-center:0.2.0
     restart: unless-stopped
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      SYSTEM_AI_MODEL: thox-ai/thoxopen-8b-heretic:q4_k_m
     ports:
-      - "${CONTROL_CENTER_BIND_IP:-127.0.0.1}:${CONTROL_CENTER_PORT:-3081}:80"
+      - "${CONTROL_CENTER_BIND_IP:-127.0.0.1}:${CONTROL_CENTER_PORT:-3081}:3081"
+    networks:
+      - ollama_network
+    depends_on:
+      ollama:
+        condition: service_healthy
