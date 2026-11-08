@@ -44,6 +44,19 @@ const hyperspaceResolve = input => {
   return {intent,score:scores[intent],scores,vector:vector.toString(2).padStart(128,'0')};
 };
 const hyperHistory=[];
+const pythonJobs=new Map();
+const pythonHistory=[];
+const pythonInfo=()=>({uid:process.getuid?.()??null,gid:process.getgid?.()??null,user:process.env.USER||null,root:process.getuid?.()===0,scope:'Codespace / konto procesu backendu; bez uprawnień hosta'});
+const runPython=(code,id)=>new Promise(resolve=>{
+  const child=spawn('python3',['-I','-c',code],{cwd:process.env.CLI_WORKDIR||process.cwd(),env:{PATH:process.env.PATH||'/usr/bin:/bin',HOME:process.env.HOME||'/tmp',PYTHONUNBUFFERED:'1'},stdio:['ignore','pipe','pipe']});
+  let stdout='',stderr='',truncated=false,finished=false,timedOut=false;
+  const append=(name,b)=>{const str=b.toString();if(name==='stdout'){const left=60000-stdout.length;if(left>0)stdout+=str.slice(0,left);if(str.length>left)truncated=true;}else{const left=60000-stderr.length;if(left>0)stderr+=str.slice(0,left);if(str.length>left)truncated=true;}};
+  child.stdout.on('data',b=>append('stdout',b));child.stderr.on('data',b=>append('stderr',b));
+  const job={child,stopped:false};pythonJobs.set(id,job);
+  const timer=setTimeout(()=>{timedOut=true;child.kill('SIGKILL')},30000);
+  const done=(exit_code,error)=>{if(finished)return;finished=true;clearTimeout(timer);pythonJobs.delete(id);const result={id,at:new Date().toISOString(),exit_code,stdout,stderr,truncated,timed_out:timedOut,stopped:job.stopped,error:error||null,identity:pythonInfo()};pythonHistory.push(result);if(pythonHistory.length>50)pythonHistory.shift();resolve(result)};
+  child.on('error',e=>done(null,e.message));child.on('close',code=>done(code,null));
+});
 const hyperPrompt = async (instruction, resolution) => {
   const response=await fetch(ollama+'/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,stream:false,prompt:'You are the AI Linux Binary Hyperspace Terminal. Answer in Polish. Explain real system operations accurately; never claim to have executed a command or accessed hardware. Classification metadata is diagnostic only: '+resolution.intent+'. User: '+instruction}),signal:AbortSignal.timeout(90000)});
   if(!response.ok) throw Error('Ollama HTTP '+response.status);
@@ -55,6 +68,17 @@ const server=http.createServer(async(req,res)=>{
   if(req.url==='/health') return reply(res,200,{status:'ok',model});
   if(req.headers.authorization!=='Bearer '+token) return reply(res,401,{error:'Unauthorized'});
   try {
+    if(req.method==='GET' && req.url==='/api/python/status') return reply(res,200,{success:true,identity:pythonInfo(),running:[...pythonJobs.keys()],history:pythonHistory.slice(-50)});
+    if(req.method==='POST' && req.url==='/api/python/stop'){
+      const {id}=await read(req);const job=pythonJobs.get(id);if(!job)return reply(res,404,{error:'Zadanie nie jest uruchomione'});
+      job.stopped=true;job.child.kill('SIGKILL');return reply(res,200,{success:true,id,stopping:true});
+    }
+    if(req.method==='POST' && req.url==='/api/python/run'){
+      const {code}=await read(req);
+      if(typeof code!=='string'||!code.trim()||code.length>12000)return reply(res,400,{error:'Skrypt musi mieć od 1 do 12000 znaków'});
+      if(pythonJobs.size>=2)return reply(res,429,{error:'Maksymalnie dwa skrypty jednocześnie'});
+      const id=randomUUID();return reply(res,200,{success:true,...await runPython(code,id)});
+    }
     if(req.method==='GET' && req.url==='/api/hyperos/history') return reply(res,200,{success:true,history:hyperHistory.slice(-100)});
     if(req.method==='POST' && req.url==='/api/hyperos/console'){
       const {command}=await read(req);
