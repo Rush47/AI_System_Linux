@@ -34,6 +34,26 @@ async function runDiagnostic(message){
   return 'Diagnostyka kontenera Control Center (nie hosta Ubuntu):\\n'+stdout.slice(0,12000);
 }
 const agentNames=new Set(['Aria','Alex','Astyria','Aurelius']);
+const outgoingTasks=new Map();
+const agentDestinations={
+ aria:process.env.ARIA_TASK_URL,alex:process.env.ALEX_TASK_URL,
+ astyria:process.env.ASTYRIA_TASK_URL,aurelius:process.env.AURELIUS_TASK_URL
+};
+async function dispatchAgentTask(task,agent){
+ const url=agentDestinations[agent];
+ if(!url)return {agent,status:'unconfigured'};
+ let parsed;
+ try{parsed=new URL(url);if(parsed.protocol!=='https:'&&!(parsed.protocol==='http:'&&['127.0.0.1','localhost'].includes(parsed.hostname)))throw Error('HTTPS required')}
+ catch(e){return {agent,status:'invalid-endpoint',error:e.message}}
+ const secret=process.env.AGENT_OUTBOUND_TOKEN;
+ if(!secret)return {agent,status:'missing-outbound-token'};
+ try{
+  const response=await fetch(parsed,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+secret},body:JSON.stringify({taskId:task.id,agent,text:task.text,channel:task.channel,createdAt:task.timestamp}),signal:AbortSignal.timeout(12000),redirect:'error'});
+  if(!response.ok)return {agent,status:'delivery-failed',httpStatus:response.status};
+  return {agent,status:'accepted-by-endpoint',httpStatus:response.status};
+ }catch(e){return {agent,status:'delivery-failed',error:String(e.message).slice(0,180)}}
+}
+
 const inboxPath=process.env.AGENT_INBOX_PATH||'/tmp/ai-linux-agent-inbox.jsonl';
 let inbox=[];
 try{inbox=(await readStored(inboxPath,'utf8')).split('\\n').filter(Boolean).slice(-500).map(line=>JSON.parse(line))}catch(e){if(e.code!=='ENOENT')console.error('Agent inbox unavailable:',e.message)}
@@ -179,9 +199,23 @@ const server=http.createServer(async(req,res)=>{
       if(!mentions.length)throw Error('No valid mentions');
       const task={id:Date.now()+'-'+Math.random().toString(36).slice(2,10),mentions,text:payload.text,channel:'Wszyscy',status:'queued-not-delivered',timestamp:new Date().toISOString()};
       await appendFile(process.env.AGENT_TASKS_PATH||'/tmp/ai-linux-agent-tasks.jsonl',JSON.stringify(task)+'\n',{mode:0o600});
+      outgoingTasks.set(task.id,{...task,delivery:mentions.map(agent=>({agent,status:'pending'}))});
+      if(outgoingTasks.size>500)outgoingTasks.delete(outgoingTasks.keys().next().value);
       syncBroadcast('agent-task-queued',task);
       res.writeHead(202,{'Content-Type':'application/json'});res.end(JSON.stringify(task));
+      void Promise.all(mentions.map(agent=>dispatchAgentTask(task,agent))).then(async delivery=>{
+       const state={...task,delivery,status:delivery.every(x=>x.status==='accepted-by-endpoint')?'accepted-by-endpoints':'partially-or-not-delivered'};
+       outgoingTasks.set(task.id,state);
+       try{await appendFile(process.env.AGENT_TASK_RESULTS_PATH||'/tmp/ai-linux-agent-delivery.jsonl',JSON.stringify(state)+'\\n',{mode:0o600})}catch(e){console.error('Agent delivery log:',e.message)}
+       syncBroadcast('agent-task-delivery',state);
+      }).catch(e=>console.error('Agent dispatch:',e.message));
     }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
+  if(req.method==='GET'&&req.url?.startsWith('/api/agents/tasks/')){
+    const token=process.env.AGENT_DISPATCH_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401);res.end('Unauthorized');return}
+    const id=decodeURIComponent(req.url.split('?')[0].slice('/api/agents/tasks/'.length));
+    const task=outgoingTasks.get(id);res.writeHead(task?200:404,{'Content-Type':'application/json'});res.end(JSON.stringify(task||{error:'Task not in active memory'}));return;
   }
   if(req.method==='GET'&&req.url?.startsWith('/api/agents/messages')){
     const url=new URL(req.url,'http://localhost');const after=Number(url.searchParams.get('after')||0);
