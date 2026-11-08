@@ -168,6 +168,21 @@ const server=http.createServer(async(req,res)=>{
       res.writeHead(201,{'Content-Type':'application/json'});res.end(JSON.stringify({item}));syncBroadcast('fleet-updated',{action,id:item.id});
     }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
   }
+  if(req.method==='POST'&&req.url==='/api/agents/mentions'){
+    const token=process.env.AGENT_DISPATCH_TOKEN;
+    if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized'}));return}
+    try{
+      let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>12000)throw Error('Too large')}
+      const payload=JSON.parse(raw);
+      if(typeof payload.text!=='string'||!payload.text.trim()||payload.text.length>8000)throw Error('Invalid message');
+      const mentions=[...new Set(Array.from(payload.text.matchAll(/@(?:aria|alex|astyria|aurelius)\b/gi),m=>m[0].slice(1).toLowerCase()))];
+      if(!mentions.length)throw Error('No valid mentions');
+      const task={id:Date.now()+'-'+Math.random().toString(36).slice(2,10),mentions,text:payload.text,channel:'Wszyscy',status:'queued-not-delivered',timestamp:new Date().toISOString()};
+      await appendFile(process.env.AGENT_TASKS_PATH||'/tmp/ai-linux-agent-tasks.jsonl',JSON.stringify(task)+'\n',{mode:0o600});
+      syncBroadcast('agent-task-queued',task);
+      res.writeHead(202,{'Content-Type':'application/json'});res.end(JSON.stringify(task));
+    }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
   if(req.method==='GET'&&req.url?.startsWith('/api/agents/messages')){
     const url=new URL(req.url,'http://localhost');const after=Number(url.searchParams.get('after')||0);
     res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({messages:inbox.filter(m=>m.id>after).slice(-100)}));return;
