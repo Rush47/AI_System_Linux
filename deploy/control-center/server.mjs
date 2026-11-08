@@ -3,6 +3,7 @@ import http from 'node:http';
 import {fleetList,fleetWrite} from './fleet.mjs';
 import {labsList,labsWrite} from './ship-labs.mjs';
 import {projectList,projectWrite} from './projects.mjs';
+import {fleetAppsList,fleetAppsWrite} from './fleet-apps.mjs';
 import {readFile} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -11,6 +12,7 @@ const page=await readFile(new URL('./index.html',import.meta.url));
 const fleetMapScript=await readFile(new URL('./fleet-map.js',import.meta.url));
 const shipLabsScript=await readFile(new URL('./ship-labs.js',import.meta.url));
 const projectsScript=await readFile(new URL('./projects.js',import.meta.url));
+const fleetAppsScript=await readFile(new URL('./fleet-apps.js',import.meta.url));
 const model=process.env.SYSTEM_AI_MODEL||'thox-ai/thoxopen-8b-heretic:q4_k_m';
 const fallbackModel=process.env.SYSTEM_AI_FALLBACK_MODEL||'maternion/spark-x2.5-heretic:4b';
 const endpoint=process.env.OLLAMA_URL||'http://ollama:11434';
@@ -45,6 +47,28 @@ syncHeartbeat.unref();
 const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Cache-Control','no-store');
+  if(req.method==='GET'&&req.url==='/fleet-apps.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(fleetAppsScript);return}
+  if(req.method==='GET'&&req.url==='/api/fleet-apps'){
+   try{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await fleetAppsList()))}catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
+  if(req.method==='POST'&&req.url==='/api/fleet-apps'){
+   const token=process.env.FLEET_WRITE_TOKEN;
+   if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized operator'}));return}
+   try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>8192)throw Error('Too large')}
+    const {action,payload}=JSON.parse(raw);
+    if(action==='app.create'&&!(await fleetList()).ships.some(x=>x.id===payload?.shipId))throw Error('Nieznany statek');
+    const item=await fleetAppsWrite(action,payload||{});
+    res.writeHead(201,{'Content-Type':'application/json'});res.end(JSON.stringify({item}));syncBroadcast('fleet-apps-updated',{action,id:item.id});
+   }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
+  if(req.method==='POST'&&req.url==='/api/fleet-apps/report'){
+   const token=process.env.FLEET_DEVICE_TOKEN;
+   if(!token||req.headers.authorization!=='Bearer '+token){res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Unauthorized device'}));return}
+   try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>4096)throw Error('Too large')}
+    const item=await fleetAppsWrite('app.report',JSON.parse(raw));
+    res.writeHead(202,{'Content-Type':'application/json'});res.end(JSON.stringify({accepted:true,id:item.id}));syncBroadcast('fleet-apps-updated',{action:'app.report',id:item.id});
+   }catch(e){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
+  }
   if(req.method==='GET'&&req.url==='/projects.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(projectsScript);return}
   if(req.method==='GET'&&req.url==='/api/projects'){
    try{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(await projectList()))}catch(e){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}))}return;
