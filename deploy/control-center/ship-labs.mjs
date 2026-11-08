@@ -3,7 +3,7 @@ import {dirname} from 'node:path';
 import {randomUUID} from 'node:crypto';
 const file=process.env.SHIP_LABS_DATA_PATH||'/tmp/ai-linux-labs.json';
 let queue=Promise.resolve();
-async function read(){try{return JSON.parse(await readFile(file,'utf8'))}catch(e){if(e.code==='ENOENT')return {projects:[],measurements:[]};throw e}}
+async function read(){try{return JSON.parse(await readFile(file,'utf8'))}catch(e){if(e.code==='ENOENT')return {projects:[],measurements:[],strains:[],compounds:[]};throw e}}
 async function save(data){await mkdir(dirname(file),{recursive:true});const tmp=file+'.'+randomUUID()+'.tmp';await writeFile(tmp,JSON.stringify(data,null,2),{mode:0o600});await rename(tmp,file)}
 const text=(s,n=200)=>typeof s==='string'&&s.trim().length>0&&s.length<=n;
 const numeric=v=>typeof v==='number'&&Number.isFinite(v);
@@ -21,6 +21,16 @@ export function labsWrite(action,payload,source='operator'){
    if(payload.eta!==undefined){if(payload.eta!==null&&(!text(payload.eta,40)||!Number.isFinite(Date.parse(payload.eta))))throw Error('Nieprawidłowe ETA');item.eta=payload.eta}
    if(!text(payload.evidence,1000))throw Error('Aktualizacja wymaga źródła danych lub uzasadnienia');
    item.lastEvidence=payload.evidence.trim();item.updatedAt=now;
+  }else if(action==='strain.create'){
+   if(!text(payload.projectId,100)||!text(payload.name,200)||!text(payload.species,200)||!text(payload.origin,1000))throw Error('Wymagane nazwa, gatunek i pochodzenie');
+   const project=d.projects.find(p=>p.id===payload.projectId&&p.module==='botanika');if(!project)throw Error('Wymagany projekt Botanika');
+   d.strains??=[];
+   item={id:randomUUID(),projectId:project.id,shipId:project.shipId,name:payload.name.trim(),species:payload.species.trim(),origin:payload.origin.trim(),status:'zarejestrowany',createdAt:now,updatedAt:now};d.strains.push(item);
+  }else if(action==='compound.create'){
+   const strain=(d.strains||[]).find(x=>x.id===payload.strainId);
+   if(!strain||!text(payload.name,200)||!text(payload.evidence,2000))throw Error('Wymagany szczep, nazwa i opis źródła');
+   d.compounds??=[];
+   item={id:randomUUID(),strainId:strain.id,shipId:strain.shipId,name:payload.name.trim(),evidence:payload.evidence.trim(),status:'hipoteza badawcza',medicalClaimVerified:false,createdAt:now,updatedAt:now};d.compounds.push(item);
   }else if(action==='measurement.ingest'){
    item=d.projects.find(p=>p.id===payload.projectId);if(!item||item.shipId!==payload.shipId)throw Error('Projekt nie należy do statku');
    if(!text(payload.sensorId,128)||!text(payload.metric,128)||!text(payload.unit,40)||!numeric(payload.value))throw Error('Nieprawidłowy pomiar');
