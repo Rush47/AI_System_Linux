@@ -9,8 +9,10 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       AGENT_MODEL: ${AGENT_MODEL:-thox-ai/thoxopen-8b-heretic:q4_k_m}
       AGENT_API_PORT: "8091"
+      AGENT_DB_PATH: /data/agent_tasks.sqlite3
     volumes:
       - ./integrations/bastilla10:/app/integrations/bastilla10:ro
+      - agent_tasks_data:/data
     depends_on:
       ollama:
         condition: service_healthy
@@ -23,3 +25,6 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+
+volumes:
+  agent_tasks_data:
