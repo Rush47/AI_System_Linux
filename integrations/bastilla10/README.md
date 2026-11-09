@@ -31,12 +31,12 @@ curl -X POST http://127.0.0.1:8091/tasks \
 
 ## Aktualny zakres i ograniczenia
 
-- `GET /health`, `GET /agents`, `POST /tasks`, `GET /tasks/{id}`.
+- `GET /health`, `GET /agents`, `GET /tasks`, `POST /tasks`, `GET /tasks/{id}`.
 - Zadania wykonuje lokalny model Ollama. Nazwy agentów są etykietami routingu,
   nie potwierdzonymi oryginalnymi instancjami.
-- Rejestr zadań jest w pamięci procesu; po restarcie znika.
+- Rejestr zadań jest trwały w SQLite. Docker Compose montuje wolumen `agent_tasks_data` do `/data`. Po restarcie zadania przerwane w stanie `running` wracają do kolejki; mogą zostać wykonane ponownie.
 - Nie wykonuje komend powłoki ani nie nadaje uprawnień root.
-- Nie zmienia istniejącego `docker-compose.yml`; usługę trzeba uruchomić osobno.
+- Nie zmienia istniejącego `docker-compose.yml`; usługę uruchom przez `docker compose -f docker-compose.yml -f docker-compose.bastilla-agents.yml up -d --build`.
 - Nie podłączono jeszcze UI Bastilla_10 do tego API.
 - Nie przeniesiono oryginalnych agentów z konta `mmitek515-netizen`.
   Do właściwej migracji konieczne jest zidentyfikowanie ich działających
