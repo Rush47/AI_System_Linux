@@ -1,0 +1,25 @@
+services:
+  bastilla-agent-rest:
+    image: python:3.12-alpine
+    working_dir: /app
+    command: ["python", "-u", "integrations/bastilla10/agent_rest.py"]
+    restart: unless-stopped
+    environment:
+      AGENT_API_TOKEN: ${AGENT_API_TOKEN:?Set AGENT_API_TOKEN in .env}
+      OLLAMA_BASE_URL: http://ollama:11434
+      AGENT_MODEL: ${AGENT_MODEL:-thox-ai/thoxopen-8b-heretic:q4_k_m}
+      AGENT_API_PORT: "8091"
+    volumes:
+      - ./integrations/bastilla10:/app/integrations/bastilla10:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - ollama_network
+    # Bind to localhost only; use authenticated reverse proxy/TLS for remote access.
+    ports:
+      - "127.0.0.1:8091:8091"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
